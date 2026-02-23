@@ -20,28 +20,29 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider
-      appearance={{
-        baseTheme: dark,
-        variables: { colorPrimary: '#f97316' }
-      }}
-    >
-      <html lang="pt-BR" suppressHydrationWarning>
-        <body className={cn(
-          "min-h-screen bg-background font-sans antialiased",
-          inter.variable,
-          outfit.variable
-        )}>
+    <html lang="pt-BR" suppressHydrationWarning>
+      <body className={cn(
+        "min-h-screen bg-background font-sans antialiased",
+        inter.variable,
+        outfit.variable
+      )}>
+        <ClerkProvider
+          appearance={{
+            baseTheme: dark,
+            variables: { colorPrimary: '#f97316' }
+          }}
+        >
           <ThemeProvider
             attribute="class"
             defaultTheme="dark"
             enableSystem={false}
             storageKey="crm-theme"
+            disableTransitionOnChange
           >
             {children}
           </ThemeProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }
