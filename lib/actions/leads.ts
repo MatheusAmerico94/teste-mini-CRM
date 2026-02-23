@@ -20,7 +20,7 @@ export async function getLeads() {
 export async function createLead(data: Omit<typeof leads.$inferInsert, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'deletedAt'>) {
     const dbUser = await getDbUser();
 
-    const leadId = crypto.randomUUID();
+    const leadId = randomUUID();
 
     await db.insert(leads).values({
         id: leadId,
@@ -46,7 +46,7 @@ export async function updateLeadStatus(leadId: string, newStatus: string) {
         .where(eq(leads.id, leadId));
 
     await db.insert(activities).values({
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         userId: lead.userId,
         leadId,
         type: 'status_mudou',
