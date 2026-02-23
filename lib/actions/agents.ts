@@ -4,7 +4,7 @@ import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { agents } from '@/lib/db/schema';
 import { getDbUser } from './users';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { randomUUID } from 'crypto';
 
@@ -13,12 +13,17 @@ export type NewAgent = typeof agents.$inferInsert;
 export async function getAgents() {
     const dbUser = await getDbUser();
 
-    const userAgents = await db.query.agents.findMany({
-        where: eq(agents.userId, dbUser.id),
-        orderBy: (agents, { desc }) => [desc(agents.createdAt)],
-    });
+    try {
+        const userAgents = await db.select()
+            .from(agents)
+            .where(eq(agents.userId, dbUser.id))
+            .orderBy(desc(agents.createdAt));
 
-    return userAgents;
+        return userAgents;
+    } catch (error) {
+        console.error('Error fetching agents:', error);
+        return [];
+    }
 }
 
 export async function createAgent(data: Omit<NewAgent, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) {
