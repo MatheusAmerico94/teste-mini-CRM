@@ -6,6 +6,7 @@ import { leads, activities } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import crypto from 'crypto';
 
 export async function getLeads() {
     const dbUser = await getDbUser();
@@ -32,8 +33,7 @@ export async function createLead(data: Omit<typeof leads.$inferInsert, 'id' | 'u
 }
 
 export async function updateLeadStatus(leadId: string, newStatus: string) {
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) throw new Error('Não autorizado');
+    const dbUser = await getDbUser();
 
     const lead = await db.query.leads.findFirst({
         where: eq(leads.id, leadId)

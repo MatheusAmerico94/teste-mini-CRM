@@ -4,6 +4,7 @@ import { currentUser } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import crypto from 'crypto';
 
 export async function getDbUser() {
     const clerkUser = await currentUser();

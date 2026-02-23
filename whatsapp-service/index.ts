@@ -1,4 +1,7 @@
-import 'dotenv/config';
+import path from 'path';
+import { config } from 'dotenv';
+config({ path: path.resolve(process.cwd(), '.env.local') });
+
 import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode';
 import postgres from 'postgres';
@@ -7,8 +10,18 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../lib/db/schema';
 
 // Setup DB connection (PostgreSQL/Supabase)
-const connectionString = process.env.DATABASE_URL!;
-const queryClient = postgres(connectionString);
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+    console.error("ERRO: DATABASE_URL não encontrada no .env.local");
+    process.exit(1);
+}
+
+// Supabase requires SSL for remote connections. 
+// We use postgres.js with SSL configured.
+const queryClient = postgres(connectionString, {
+    ssl: 'require',
+    connect_timeout: 10,
+});
 const db = drizzle(queryClient, { schema });
 
 // We need an ID to know WHICH user this WhatsApp instance belongs to.

@@ -6,6 +6,7 @@ import { agents } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import crypto from 'crypto';
 
 export type NewAgent = typeof agents.$inferInsert;
 
@@ -36,8 +37,7 @@ export async function createAgent(data: Omit<NewAgent, 'id' | 'userId' | 'create
 }
 
 export async function updateAgent(agentId: string, data: Partial<NewAgent>) {
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) throw new Error('Não autorizado');
+    const dbUser = await getDbUser();
 
     await db.update(agents)
         .set({ ...data, updatedAt: new Date() })
@@ -48,8 +48,7 @@ export async function updateAgent(agentId: string, data: Partial<NewAgent>) {
 }
 
 export async function deleteAgent(agentId: string) {
-    const { userId: clerkUserId } = await auth();
-    if (!clerkUserId) throw new Error('Não autorizado');
+    const dbUser = await getDbUser();
 
     await db.delete(agents).where(eq(agents.id, agentId));
 

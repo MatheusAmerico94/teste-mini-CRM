@@ -6,6 +6,7 @@ import { whatsappConnections } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import crypto from 'crypto';
 
 export async function getConnectionStatus() {
     const dbUser = await getDbUser();
