@@ -12,7 +12,7 @@ const revenueData = [
 ];
 
 const funnelData = [
-    { name: 'Leads', value: 120, fill: '#3b82f6' },
+    { name: 'Leads', value: 120, fill: '#f97316' },
     { name: 'Contato', value: 85, fill: '#8b5cf6' },
     { name: 'Proposta', value: 45, fill: '#ec4899' },
     { name: 'Negociação', value: 20, fill: '#f97316' },
@@ -32,8 +32,8 @@ export function RevenueChart() {
             <AreaChart data={revenueData}>
                 <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
                     </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.5} />
@@ -43,7 +43,7 @@ export function RevenueChart() {
                     contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }}
                     itemStyle={{ color: '#fff' }}
                 />
-                <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
+                <Area type="monotone" dataKey="value" stroke="#f97316" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
             </AreaChart>
         </ResponsiveContainer>
     );

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { LayoutDashboard, Users, Settings, LogOut, Zap, Menu, Bot, Smartphone } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { ModeToggle } from "@/components/ModeToggle";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     return (
@@ -10,12 +11,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {/* Sidebar Desktop */}
             <aside className="hidden w-64 flex-col border-r bg-background dark:bg-slate-900 border-border md:flex sticky top-0 h-screen">
                 <div className="flex h-16 items-center px-6 border-b border-border">
-                    <Zap className="h-6 w-6 text-blue-500 mr-2 filled-blue-500" />
+                    <Zap className="h-6 w-6 text-primary mr-2 fill-primary" />
                     <span className="font-heading font-bold text-lg">Mini CRM</span>
                 </div>
                 <nav className="flex-1 flex flex-col gap-2 p-4">
                     <Link href="/dashboard">
-                        <Button variant="default" className="w-full justify-start font-medium shadow-blue-500/20">
+                        <Button variant="default" className="w-full justify-start font-medium shadow-primary/20 bg-primary text-primary-foreground">
                             <LayoutDashboard className="mr-3 h-5 w-5" /> Dashboard
                         </Button>
                     </Link>
@@ -31,16 +32,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </Link>
                     <Link href="#">
                         <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground hover:text-foreground">
-                            <Users className="mr-3 h-5 w-5" /> Leads <span className="ml-auto text-xs bg-blue-500/20 text-blue-500 px-2 py-0.5 rounded-full">Em breve</span>
+                            <Users className="mr-3 h-5 w-5" /> Leads <span className="ml-auto text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">Em breve</span>
                         </Button>
                     </Link>
                     <div className="mt-auto">
-                        <div className="bg-blue-500/10 rounded-xl p-4 mb-2">
-                            <p className="text-sm font-semibold text-blue-400 mb-1">Meta Mensal</p>
-                            <div className="h-2 w-full bg-blue-500/20 rounded-full mb-2">
-                                <div className="h-2 w-[75%] bg-blue-500 rounded-full"></div>
+                        <div className="bg-primary/10 rounded-xl p-4 mb-2">
+                            <p className="text-sm font-semibold text-primary mb-1">Meta Mensal</p>
+                            <div className="h-2 w-full bg-primary/20 rounded-full mb-2">
+                                <div className="h-2 w-[75%] bg-primary rounded-full"></div>
                             </div>
-                            <p className="text-xs text-blue-400/80">R$ 15k / R$ 20k</p>
+                            <p className="text-xs text-primary/80">R$ 15k / R$ 20k</p>
                         </div>
                     </div>
                 </nav>
@@ -60,7 +61,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                 {/* Mobile Nav Content */}
                                 <div className="flex flex-col h-full">
                                     <div className="flex h-16 items-center px-6 border-b">
-                                        <Zap className="h-6 w-6 text-blue-500 mr-2" />
+                                        <Zap className="h-6 w-6 text-primary mr-2 fill-primary" />
                                         <span className="font-heading font-bold text-lg">Mini CRM</span>
                                     </div>
                                     <nav className="flex-1 p-4 gap-2 flex flex-col">
@@ -74,11 +75,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </div>
 
                     <div className="flex items-center gap-4">
+                        <ModeToggle />
                         <UserButton
                             afterSignOutUrl="/"
                             appearance={{
                                 elements: {
-                                    avatarBox: "h-9 w-9 ring-2 ring-blue-500/20"
+                                    avatarBox: "h-9 w-9 ring-2 ring-primary/20"
                                 }
                             }}
                         />

@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 
 const COLUMNS = [
-    { id: 'novo', label: 'Novo Lead', color: 'bg-slate-100', border: 'border-slate-200' },
-    { id: 'contato', label: 'Contato Feito', color: 'bg-blue-50', border: 'border-blue-200' },
-    { id: 'proposta', label: 'Proposta Enviada', color: 'bg-purple-50', border: 'border-purple-200' },
+    { id: 'novo', label: 'Novo Lead', color: 'bg-slate-50', border: 'border-slate-200' },
+    { id: 'contato', label: 'Contato Feito', color: 'bg-orange-50/30', border: 'border-orange-200/50' },
+    { id: 'proposta', label: 'Proposta Enviada', color: 'bg-slate-50', border: 'border-slate-200' },
     { id: 'negociacao', label: 'Negociação', color: 'bg-orange-50', border: 'border-orange-200' },
     { id: 'fechado', label: 'Fechado', color: 'bg-green-50', border: 'border-green-200' },
 ];

@@ -18,7 +18,7 @@ export function LeadCard({ lead, attributes, listeners, setNodeRef, transform, i
                 return <Badge variant="default" className="bg-orange-500 hover:bg-orange-600 border-none text-white"><ThermometerSun className="w-3 h-3 mr-1" /> Morno</Badge>;
             case 'frio':
             default:
-                return <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-none"><Thermometer className="w-3 h-3 mr-1" /> Frio</Badge>;
+                return <Badge variant="secondary" className="bg-slate-100 text-slate-700 hover:bg-slate-200 border-none"><Thermometer className="w-3 h-3 mr-1" /> Frio</Badge>;
         }
     };
 
@@ -31,7 +31,7 @@ export function LeadCard({ lead, attributes, listeners, setNodeRef, transform, i
             className={`touch-none cursor-grab active:cursor-grabbing mb-3 `}
         >
             <Card className={`border-l-4 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden ${lead.temperature === 'quente' ? 'border-l-red-500' :
-                    lead.temperature === 'morno' ? 'border-l-orange-500' : 'border-l-blue-500'
+                lead.temperature === 'morno' ? 'border-l-orange-500' : 'border-l-slate-300'
                 }`}>
                 <CardHeader className="p-4 pb-2">
                     <div className="flex justify-between items-start mb-2">

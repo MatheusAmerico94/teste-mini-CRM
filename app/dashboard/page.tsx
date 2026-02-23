@@ -39,7 +39,7 @@ export default async function DashboardPage() {
         <div className="space-y-6 animate-in fade-in-50 duration-500">
             {/* Stats Row */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card className="bg-gradient-to-br from-blue-600 to-blue-700 border-none text-white shadow-lg shadow-blue-900/20 relative overflow-hidden group">
+                <Card className="bg-gradient-to-br from-orange-600 to-orange-700 border-none text-white shadow-lg shadow-orange-900/20 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform duration-500"><DollarSign className="w-24 h-24" /></div>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium opacity-90">Receita Fechada</CardTitle>
@@ -90,10 +90,10 @@ export default async function DashboardPage() {
 
             {/* AI & Integration Status Row */}
             <div className="grid gap-4 md:grid-cols-2">
-                <Card className="shadow-sm border-blue-500/10">
+                <Card className="shadow-sm border-primary/10">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-lg flex items-center gap-2">
-                            <Bot className="w-5 h-5 text-blue-500" /> Seus Agentes de IA
+                            <Bot className="w-5 h-5 text-primary" /> Seus Agentes de IA
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -105,7 +105,7 @@ export default async function DashboardPage() {
                                             <p className="font-medium text-sm text-slate-800">{agent.name}</p>
                                             <p className="text-xs text-slate-500">{agent.provider} • {agent.model || 'Padrão'}</p>
                                         </div>
-                                        <Badge variant={agent.isActive ? 'default' : 'secondary'} className={agent.isActive ? 'bg-blue-500 hover:bg-blue-600' : ''}>
+                                        <Badge variant={agent.isActive ? 'default' : 'secondary'} className={agent.isActive ? 'bg-primary hover:bg-primary/90' : ''}>
                                             {agent.isActive ? 'Ativo' : 'Inativo'}
                                         </Badge>
                                     </div>
