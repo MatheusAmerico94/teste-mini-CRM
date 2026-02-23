@@ -2,12 +2,21 @@ import path from 'path';
 import { config } from 'dotenv';
 config({ path: path.resolve(process.cwd(), '.env.local') });
 
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import makeWASocket, {
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    makeCacheableSignalKeyStore,
+    isJidBroadcast,
+    Browsers
+} from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import * as schema from '../lib/db/schema';
+import pino from 'pino';
 
 // Setup DB connection (PostgreSQL/Supabase)
 const connectionString = process.env.DATABASE_URL;
@@ -16,15 +25,14 @@ if (!connectionString) {
     process.exit(1);
 }
 
-// Supabase requires SSL for remote connections. 
-// We use postgres.js with SSL configured.
 const queryClient = postgres(connectionString, {
     ssl: 'require',
     connect_timeout: 10,
 });
 const db = drizzle(queryClient, { schema });
 
-// We need an ID to know WHICH user this WhatsApp instance belongs to.
+const logger = pino({ level: 'info' });
+
 async function getAdminUser() {
     const defaultUser = await db.query.users.findFirst();
     if (!defaultUser) {
@@ -36,74 +44,82 @@ async function getAdminUser() {
 
 async function startWhatsAppService() {
     const userId = await getAdminUser();
-    console.log(`Iniciando serviço de WhatsApp para o usuário ID: ${userId}`);
+    console.log(`🚀 Iniciando Baileys para o usuário ID: ${userId}`);
 
-    // Create a new WhatsApp client with LocalAuth to persist sessions.
-    const waClient = new Client({
-        authStrategy: new LocalAuth({ clientId: userId }),
-        puppeteer: {
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        }
+    const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, `auth-info-${userId}`));
+    const { version } = await fetchLatestBaileysVersion();
+
+    const sock = makeWASocket({
+        version,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, logger),
+        },
+        printQRInTerminal: true,
+        browser: Browsers.ubuntu('Chrome'),
+        logger,
+        generateHighQualityLinkPreview: true,
     });
 
-    waClient.on('qr', async (qrRaw: string) => {
-        console.log('🔗 QR CODE RECEBIDO, gerando imagem base64 para o painel...');
+    sock.ev.on('creds.update', saveCreds);
 
-        try {
-            // Convert raw QR text to a base64 DataURI image
-            const qrDataUri = await qrcode.toDataURL(qrRaw);
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-            // Save to the database so the Next.js Dashboard can fetch it
+        if (qr) {
+            console.log('🔗 NOVO QR CODE RECEBIDO!');
+            const qrDataUri = await qrcode.toDataURL(qr);
             await db.update(schema.whatsappConnections)
                 .set({ status: 'qr', qrCode: qrDataUri, updatedAt: new Date() })
                 .where(eq(schema.whatsappConnections.userId, userId));
-
-            console.log('✅ QR Code salvo no banco de dados. Abra o Mini CRM para escanear.');
-        } catch (error) {
-            console.error('Erro ao gerar/salvar QR Code:', error);
         }
-    });
 
-    waClient.on('ready', async () => {
-        console.log('🟢 CLIENTE WHATSAPP CONECTADO E PRONTO!');
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('🔴 Conexão fechada devido a ', lastDisconnect?.error, ', reconectando: ', shouldReconnect);
 
-        await db.update(schema.whatsappConnections)
-            .set({ status: 'connected', qrCode: null, updatedAt: new Date() })
-            .where(eq(schema.whatsappConnections.userId, userId));
-    });
+            await db.update(schema.whatsappConnections)
+                .set({ status: 'disconnected', qrCode: null, updatedAt: new Date() })
+                .where(eq(schema.whatsappConnections.userId, userId));
 
-    waClient.on('disconnected', async (reason: string) => {
-        console.log('🔴 WHATSAPP DESCONECTADO:', reason);
-        await db.update(schema.whatsappConnections)
-            .set({ status: 'disconnected', qrCode: null, updatedAt: new Date() })
-            .where(eq(schema.whatsappConnections.userId, userId));
-    });
-
-    waClient.on('message', async (msg: any) => {
-        if (msg.from === 'status@broadcast') return;
-
-        const contactNumber = msg.from.split('@')[0];
-        const messageBody = msg.body;
-        console.log(`📩 Nova mensagem de ${contactNumber}: ${messageBody}`);
-
-        try {
-            // Dynamically import the AI processing logic from our Next.js backend services
-            const chatService = require('../lib/services/chat');
-
-            // Pass the incoming message to the LLM router
-            const reply = await chatService.processIncomingMessage(userId, contactNumber, messageBody);
-
-            if (reply) {
-                console.log(`🤖 IA respondendo: ${reply}`);
-                await waClient.sendMessage(msg.from, reply);
+            if (shouldReconnect) {
+                startWhatsAppService();
             }
-        } catch (error) {
-            console.error("Erro ao processar mensagem com IA:", error);
+        } else if (connection === 'open') {
+            console.log('🟢 CONEXÃO ABERTA COM SUCESSO!');
+            await db.update(schema.whatsappConnections)
+                .set({ status: 'connected', qrCode: null, updatedAt: new Date() })
+                .where(eq(schema.whatsappConnections.userId, userId));
         }
     });
 
-    // Start the client
-    waClient.initialize();
+    sock.ev.on('messages.upsert', async (m) => {
+        if (m.type === 'notify') {
+            for (const msg of m.messages) {
+                if (!msg.key.fromMe && !isJidBroadcast(msg.key.remoteJid!)) {
+                    const from = msg.key.remoteJid!;
+                    const contactNumber = from.split('@')[0];
+                    const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+
+                    if (body) {
+                        console.log(`📩 Mensagem de ${contactNumber}: ${body}`);
+
+                        try {
+                            const chatService = require('../lib/services/chat');
+                            const reply = await chatService.processIncomingMessage(userId, contactNumber, body);
+
+                            if (reply) {
+                                console.log(`🤖 IA respondendo para ${contactNumber}: ${reply}`);
+                                await sock.sendMessage(from, { text: reply });
+                            }
+                        } catch (error) {
+                            console.error("Erro ao processar mensagem com IA:", error);
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 startWhatsAppService();
