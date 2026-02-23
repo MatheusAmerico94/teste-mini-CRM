@@ -106,7 +106,7 @@ export function WhatsAppManager() {
                             <p className="text-sm text-muted-foreground mb-6">
                                 O QR Code será gerado assim que o servidor iniciar o cliente do WhatsApp. Atualize a página ou aguarde.
                             </p>
-                            <Button onClick={fetchStatus} size="lg" className="bg-green-600 hover:bg-green-500">
+                            <Button onClick={fetchStatus} size="lg" className="bg-primary hover:bg-primary/90">
                                 <RefreshCcw className="mr-2 h-4 w-4" /> Tentar Conectar
                             </Button>
                         </div>
