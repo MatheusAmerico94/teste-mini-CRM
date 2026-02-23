@@ -4,7 +4,7 @@ import { currentUser } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 
 export async function getDbUser() {
     const clerkUser = await currentUser();
@@ -16,7 +16,7 @@ export async function getDbUser() {
 
     // Fallback if webhook hasn't run or failed (common in local dev)
     if (!dbUser) {
-        const id = crypto.randomUUID();
+        const id = randomUUID();
         await db.insert(users).values({
             id,
             clerkUserId: clerkUser.id,

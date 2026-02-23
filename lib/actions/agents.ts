@@ -6,7 +6,7 @@ import { agents } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 
 export type NewAgent = typeof agents.$inferInsert;
 
@@ -24,7 +24,7 @@ export async function getAgents() {
 export async function createAgent(data: Omit<NewAgent, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) {
     const dbUser = await getDbUser();
 
-    const agentId = crypto.randomUUID();
+    const agentId = randomUUID();
 
     await db.insert(agents).values({
         id: agentId,

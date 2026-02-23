@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, BarChart3, Users, Zap, LayoutDashboard } from 'lucide-react';
+import { ArrowRight, BarChart, Users, Zap, LayoutDashboard } from 'lucide-react';
 
 export default function LandingPage() {
   return (
@@ -89,7 +89,7 @@ export default function LandingPage() {
         {/* Features Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full text-left max-w-5xl">
           {[
-            { title: "Pipeline Kanban", icon: BarChart3, desc: "Arraste e solte leads entre etapas. Visualize seu progresso instantaneamente.", color: "text-orange-400" },
+            { title: "Pipeline Kanban", icon: BarChart, desc: "Arraste e solte leads entre etapas. Visualize seu progresso instantaneamente.", color: "text-orange-400" },
             { title: "Gestão Unificada", icon: Users, desc: "Histórico completo, notas e valores. Tudo o que você precisa em um clique.", color: "text-purple-400" },
             { title: "Foco Total", icon: Zap, desc: "Interface limpa e rápida. Sem distrações, apenas você e suas vendas.", color: "text-yellow-400" }
           ].map((f, i) => (

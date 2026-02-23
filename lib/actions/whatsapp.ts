@@ -6,7 +6,7 @@ import { whatsappConnections } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 
 export async function getConnectionStatus() {
     const dbUser = await getDbUser();
@@ -17,7 +17,7 @@ export async function getConnectionStatus() {
 
     if (!connection) {
         // Create initial disconnected state
-        const connId = crypto.randomUUID();
+        const connId = randomUUID();
         await db.insert(whatsappConnections).values({
             id: connId,
             userId: dbUser.id,

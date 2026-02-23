@@ -6,7 +6,7 @@ import { leads, activities } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 
 export async function getLeads() {
     const dbUser = await getDbUser();
