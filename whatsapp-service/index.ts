@@ -1,22 +1,17 @@
 import 'dotenv/config';
 import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode';
-import { createClient } from '@libsql/client';
-import { drizzle } from 'drizzle-orm/libsql';
-import { eq, and } from 'drizzle-orm';
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { eq } from 'drizzle-orm';
 import * as schema from '../lib/db/schema';
-import crypto from 'crypto';
 
-// Setup DB connection (Simulating the Next.js setup but in a standalone Node script)
-const client = createClient({
-    url: process.env.DATABASE_URL || 'file:./sqlite.db',
-    authToken: process.env.DATABASE_AUTH_TOKEN,
-});
-const db = drizzle(client, { schema });
+// Setup DB connection (PostgreSQL/Supabase)
+const connectionString = process.env.DATABASE_URL!;
+const queryClient = postgres(connectionString);
+const db = drizzle(queryClient, { schema });
 
 // We need an ID to know WHICH user this WhatsApp instance belongs to.
-// In a real multi-tenant app, we'd spawn multiple workers or use a singular Baileys setup for multiple sockets.
-// For the Mini CRM MVP, we will run one instance and map it to the first user found.
 async function getAdminUser() {
     const defaultUser = await db.query.users.findFirst();
     if (!defaultUser) {
@@ -38,7 +33,7 @@ async function startWhatsAppService() {
         }
     });
 
-    waClient.on('qr', async (qrRaw) => {
+    waClient.on('qr', async (qrRaw: string) => {
         console.log('🔗 QR CODE RECEBIDO, gerando imagem base64 para o painel...');
 
         try {
@@ -64,14 +59,14 @@ async function startWhatsAppService() {
             .where(eq(schema.whatsappConnections.userId, userId));
     });
 
-    waClient.on('disconnected', async (reason) => {
+    waClient.on('disconnected', async (reason: string) => {
         console.log('🔴 WHATSAPP DESCONECTADO:', reason);
         await db.update(schema.whatsappConnections)
             .set({ status: 'disconnected', qrCode: null, updatedAt: new Date() })
             .where(eq(schema.whatsappConnections.userId, userId));
     });
 
-    waClient.on('message', async (msg) => {
+    waClient.on('message', async (msg: any) => {
         if (msg.from === 'status@broadcast') return;
 
         const contactNumber = msg.from.split('@')[0];

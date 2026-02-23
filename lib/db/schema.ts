@@ -1,16 +1,16 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { pgTable, text, timestamp, integer, doublePrecision, boolean } from 'drizzle-orm/pg-core';
 
-export const users = sqliteTable('users', {
+export const users = pgTable('users', {
     id: text('id').primaryKey(),
     clerkUserId: text('clerk_user_id').unique().notNull(),
     email: text('email').notNull(),
     name: text('name'),
     avatarUrl: text('avatar_url'),
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-    lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at'),
 });
 
-export const leads = sqliteTable('leads', {
+export const leads = pgTable('leads', {
     id: text('id').primaryKey(),
     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
 
@@ -19,16 +19,16 @@ export const leads = sqliteTable('leads', {
     phone: text('phone'),
     company: text('company'),
 
-    estimatedValue: real('estimated_value').default(0),
+    estimatedValue: doublePrecision('estimated_value').default(0),
     status: text('status').default('novo'),
     temperature: text('temperature').default('frio'), // frio, morno, quente
 
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-    deletedAt: integer('deleted_at', { mode: 'timestamp' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at'),
 });
 
-export const activities = sqliteTable('activities', {
+export const activities = pgTable('activities', {
     id: text('id').primaryKey(),
     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     leadId: text('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
@@ -37,10 +37,10 @@ export const activities = sqliteTable('activities', {
     content: text('content'),
     metadata: text('metadata'), // JSON stringified
 
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-export const agents = sqliteTable('agents', {
+export const agents = pgTable('agents', {
     id: text('id').primaryKey(),
     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
@@ -48,16 +48,16 @@ export const agents = sqliteTable('agents', {
     provider: text('provider').notNull(), // 'openai', 'groq', 'gemini'
     model: text('model'),
     apiKey: text('api_key'),
-    isActive: integer('is_active', { mode: 'boolean' }).default(true),
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-export const whatsappConnections = sqliteTable('whatsapp_connections', {
+export const whatsappConnections = pgTable('whatsapp_connections', {
     id: text('id').primaryKey(),
     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     status: text('status').notNull().default('disconnected'), // 'disconnected', 'qr', 'connected'
     sessionData: text('session_data'), // JSON string with auth info
     qrCode: text('qr_code'),
-    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
