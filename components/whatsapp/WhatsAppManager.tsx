@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,14 +10,15 @@ import { getConnectionStatus, disconnectWhatsApp } from '@/lib/actions/whatsapp'
 export function WhatsAppManager() {
     const [status, setStatus] = useState<'disconnected' | 'qr' | 'connected' | 'loading'>('loading');
     const [qrCode, setQrCode] = useState<string | null>(null);
+    const statusRef = useRef(status);
+
+    useEffect(() => {
+        statusRef.current = status;
+    }, [status]);
 
     const handleConnect = async () => {
         setStatus('loading');
-        // Call the mock api to initialize the whatsapp connection and generate a qr
         try {
-            // We need the user ID for the mock. Clerk's useUser or getting it via ServerAction is best.
-            // But we can just call our server action to ensure the connection entry exists, 
-            // and let a real backend worker pick it up. Since we are mocking:
             const conn = await getConnectionStatus();
             if (conn) {
                 await fetch('/api/whatsapp', {
@@ -47,15 +48,15 @@ export function WhatsAppManager() {
     useEffect(() => {
         fetchStatus();
 
-        // Poll every 5 seconds if not connected
+        // Poll every 5 seconds, using ref to always have fresh status
         const interval = setInterval(() => {
-            if (status !== 'connected') {
+            if (statusRef.current !== 'connected') {
                 fetchStatus();
             }
         }, 5000);
 
         return () => clearInterval(interval);
-    }, [status]);
+    }, []); // Run once on mount only
 
     const handleDisconnect = async () => {
         setStatus('loading');

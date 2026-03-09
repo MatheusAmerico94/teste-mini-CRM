@@ -11,7 +11,7 @@ import makeWASocket, {
     Browsers
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
-import qrcode from 'qrcode';
+import qrcode from 'qrcode-terminal';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
@@ -94,14 +94,11 @@ async function startWhatsAppService() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            console.log('🔗 QR CODE RECEBIDO! Salvando no banco...');
-            try {
-                const qrDataUri = await qrcode.toDataURL(qr);
-                await upsertConnection(userId, { status: 'qr', qrCode: qrDataUri });
-                console.log('✅ QR Code salvo! Acesse o Dashboard e atualize a página.');
-            } catch (err) {
-                console.error('❌ Erro ao salvar QR Code:', err);
-            }
+            console.log('\n📱 Escaneie o QR Code abaixo com o WhatsApp:');
+            console.log('   (Abra o WhatsApp → Aparelhos conectados → Conectar aparelho)\n');
+            qrcode.generate(qr, { small: true });
+            console.log('\n  Aguardando escaneamento...\n');
+            await upsertConnection(userId, { status: 'qr', qrCode: null });
         }
 
         if (connection === 'close') {

@@ -1,14 +1,14 @@
 'use server';
 
-import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { whatsappConnections } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { eq } from 'drizzle-orm';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { randomUUID } from 'crypto';
 
 export async function getConnectionStatus() {
+    noStore(); // Always fetch fresh data — no caching
     const dbUser = await getDbUser();
 
     let connection = await db.query.whatsappConnections.findFirst({

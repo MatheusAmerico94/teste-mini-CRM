@@ -1,0 +1,14 @@
+services:
+  # O nosso Robô do WhatsApp rodando ininterruptamente
+  - type: web
+    name: mini-crm-whatsapp-bot
+    env: node
+    plan: free # Usa o plano gratuito da Render
+    buildCommand: npm install && npm run build:whatsapp
+    startCommand: npm run start:whatsapp
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # As chaves abaixo devem ser preenchidas no painel do Render!
+      # OPENAI_API_KEY
+      # DATABASE_URL (URL de conexão que você usa no seu Supabase)

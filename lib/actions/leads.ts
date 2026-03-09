@@ -2,7 +2,8 @@
 
 import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
-import { leads, activities } from '@/lib/db/schema';
+import { leads, activities, messages } from '@/lib/db/schema';
+import * as schema from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -58,4 +59,18 @@ export async function updateLeadStatus(leadId: string, newStatus: string) {
     return { success: true };
 }
 
-// Outras funções de CRUD (update, delete) iriam aqui
+export async function getLeadMessages(leadId: string) {
+    const dbUser = await getDbUser();
+
+    // Verify lead belongs to user
+    const lead = await db.query.leads.findFirst({
+        where: eq(leads.id, leadId)
+    });
+
+    if (!lead || lead.userId !== dbUser.id) return [];
+
+    return await db.query.messages.findMany({
+        where: eq(schema.messages.leadId, leadId),
+        orderBy: (messages, { asc }) => [asc(messages.createdAt)]
+    });
+}
