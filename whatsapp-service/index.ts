@@ -131,7 +131,14 @@ async function startSocket(requestedUserId?: string) {
             avatarUrl,
             legacyNumber,
           });
-          if (reply) await sock?.sendMessage(jid, { text: reply });
+          if (reply) {
+            try {
+              await sock?.readMessages([msg.key]);
+            } catch (error) {
+              logger.warn({ err: error, messageId: msg.key.id }, 'falha ao confirmar leitura');
+            }
+            await sock?.sendMessage(jid, { text: reply });
+          }
         } catch (error) {
           logger.error({ err: error, messageId: msg.key.id }, 'falha ao processar mensagem recebida');
         }
