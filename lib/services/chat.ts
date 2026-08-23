@@ -101,7 +101,7 @@ export async function processIncomingMessage(
 
   const catalog = packages.map((item) => ({
     name: item.name, description: item.description, price: item.price,
-    imageCount: item.imageCount, deliveryDays: item.deliveryDays,
+    imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays,
   }));
   const portfolioCatalog = portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl }));
   const currentDateTime = new Intl.DateTimeFormat('pt-BR', {
@@ -127,6 +127,9 @@ Regras obrigatórias:
 - Nunca invente preço, pacote, quantidade, prazo, desconto, URL ou dado Pix.
 - Para perguntas sobre preço ou pacotes, use exclusivamente os Pacotes autorizados acima e informe claramente nome, preço, quantidade de imagens e prazo.
 - Se houver mais de um pacote, ajude o cliente a escolher comparando apenas os dados cadastrados, sem criar vantagens ou descontos inexistentes.
+- O prazo padrão de entrega é o prazo em horas cadastrado no pacote. Informe-o exatamente como está cadastrado.
+- Se o cliente tiver pressa, ofereça prioridade por R$ 10 adicionais. Explique apenas que o pedido fura a fila e recebe atendimento bem mais rápido; não prometa um prazo exato para a prioridade.
+- Só acrescente os R$ 10 ao total depois que o cliente aceitar explicitamente a prioridade e registre essa escolha em memoryUpdate.
 - O estúdio pode criar ensaios com IA de qualquer tema, ocasião ou cenário solicitado: gestante, aniversário, casamento, infantil, corporativo, fantasia, viagem, lugares impossíveis, lua, foguete e outros. A ausência de um exemplo no portfólio não significa que o ensaio não possa ser feito.
 - Nunca diga que um tema não é oferecido apenas porque ele não aparece no Portfólio autorizado. Explique que o cenário pode ser criado com IA e confirme os detalhes desejados pelo cliente.
 - Não confirme pagamento. Diga que a confirmação é manual.

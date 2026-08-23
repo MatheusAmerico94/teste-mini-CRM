@@ -109,6 +109,7 @@ export const servicePackages = pgTable('service_packages', {
     price: doublePrecision('price').notNull().default(0),
     imageCount: integer('image_count').notNull().default(1),
     deliveryDays: integer('delivery_days').notNull().default(3),
+    deliveryHours: integer('delivery_hours'),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),

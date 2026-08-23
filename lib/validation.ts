@@ -28,5 +28,6 @@ export const packageSchema = z.object({
   price: z.coerce.number().min(0).max(1000000),
   imageCount: z.coerce.number().int().min(1).max(1000),
   deliveryDays: z.coerce.number().int().min(0).max(365),
+  deliveryHours: z.coerce.number().int().min(1).max(720).optional().default(2),
   isActive: z.boolean().default(true),
 });

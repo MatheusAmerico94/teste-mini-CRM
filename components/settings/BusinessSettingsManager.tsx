@@ -15,7 +15,7 @@ type Configuration = { settings: any; packages: any[]; portfolio: any[] };
 export function BusinessSettingsManager({ initialConfiguration }: { initialConfiguration: Configuration }) {
   const [configuration, setConfiguration] = useState(initialConfiguration);
   const [settings, setSettings] = useState(initialConfiguration.settings || {});
-  const [packageDraft, setPackageDraft] = useState({ name: '', description: '', price: 0, imageCount: 10, deliveryDays: 3, isActive: true });
+  const [packageDraft, setPackageDraft] = useState({ name: '', description: '', price: 0, imageCount: 10, deliveryDays: 0, deliveryHours: 2, isActive: true });
   const [portfolioDraft, setPortfolioDraft] = useState({ title: '', category: '', mediaUrl: '' });
   const [message, setMessage] = useState('');
 
@@ -32,7 +32,7 @@ export function BusinessSettingsManager({ initialConfiguration }: { initialConfi
   const createPackage = async () => {
     const result = await savePackage(packageDraft);
     setConfiguration((current) => ({ ...current, packages: [...current.packages, { ...packageDraft, id: result.packageId }] }));
-    setPackageDraft({ name: '', description: '', price: 0, imageCount: 10, deliveryDays: 3, isActive: true });
+    setPackageDraft({ name: '', description: '', price: 0, imageCount: 10, deliveryDays: 0, deliveryHours: 2, isActive: true });
   };
 
   const createPortfolio = async () => {
@@ -57,8 +57,8 @@ export function BusinessSettingsManager({ initialConfiguration }: { initialConfi
     </Card>
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" />Pacotes</CardTitle></CardHeader><CardContent className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-5"><Input placeholder="Nome" value={packageDraft.name} onChange={(e) => setPackageDraft({ ...packageDraft, name: e.target.value })} /><Input placeholder="Descrição" value={packageDraft.description} onChange={(e) => setPackageDraft({ ...packageDraft, description: e.target.value })} /><Input type="number" placeholder="Preço" value={packageDraft.price} onChange={(e) => setPackageDraft({ ...packageDraft, price: Number(e.target.value) })} /><Input type="number" placeholder="Imagens" value={packageDraft.imageCount} onChange={(e) => setPackageDraft({ ...packageDraft, imageCount: Number(e.target.value) })} /><Button disabled={!packageDraft.name} onClick={createPackage}><Plus className="mr-2 h-4 w-4" />Adicionar</Button></div>
-      <div className="grid gap-3 md:grid-cols-2">{configuration.packages.map((item) => <div key={item.id} className="flex items-center justify-between rounded-lg border p-4"><div><div className="font-medium">{item.name} <Badge variant="secondary">{item.imageCount} imagens</Badge></div><p className="text-sm text-muted-foreground">R$ {Number(item.price).toLocaleString('pt-BR')} · {item.deliveryDays} dias</p></div><Button variant="ghost" size="icon" onClick={async () => { await deletePackage(item.id); setConfiguration((c) => ({ ...c, packages: c.packages.filter((p) => p.id !== item.id) })); }}><Trash2 className="h-4 w-4 text-red-500" /></Button></div>)}</div>
+      <div className="grid gap-3 md:grid-cols-6"><Input placeholder="Nome" value={packageDraft.name} onChange={(e) => setPackageDraft({ ...packageDraft, name: e.target.value })} /><Input placeholder="Descrição" value={packageDraft.description} onChange={(e) => setPackageDraft({ ...packageDraft, description: e.target.value })} /><Input type="number" placeholder="Preço" value={packageDraft.price} onChange={(e) => setPackageDraft({ ...packageDraft, price: Number(e.target.value) })} /><Input type="number" placeholder="Imagens" value={packageDraft.imageCount} onChange={(e) => setPackageDraft({ ...packageDraft, imageCount: Number(e.target.value) })} /><Input type="number" placeholder="Prazo (horas)" value={packageDraft.deliveryHours} onChange={(e) => setPackageDraft({ ...packageDraft, deliveryHours: Number(e.target.value) })} /><Button disabled={!packageDraft.name} onClick={createPackage}><Plus className="mr-2 h-4 w-4" />Adicionar</Button></div>
+      <div className="grid gap-3 md:grid-cols-2">{configuration.packages.map((item) => <div key={item.id} className="flex items-center justify-between rounded-lg border p-4"><div><div className="font-medium">{item.name} <Badge variant="secondary">{item.imageCount} imagens</Badge></div><p className="text-sm text-muted-foreground">R$ {Number(item.price).toLocaleString('pt-BR')} · {item.deliveryHours ? `${item.deliveryHours} horas` : `${item.deliveryDays} dias`}</p></div><Button variant="ghost" size="icon" onClick={async () => { await deletePackage(item.id); setConfiguration((c) => ({ ...c, packages: c.packages.filter((p) => p.id !== item.id) })); }}><Trash2 className="h-4 w-4 text-red-500" /></Button></div>)}</div>
     </CardContent></Card>
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><ImageIcon className="h-5 w-5" />Portfólio</CardTitle><CardDescription>Use URLs públicas de imagens hospedadas no Supabase Storage ou outro serviço.</CardDescription></CardHeader><CardContent className="space-y-5">
@@ -71,4 +71,3 @@ export function BusinessSettingsManager({ initialConfiguration }: { initialConfi
 function Field({ label, wide, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
   return <div className={`space-y-2 ${wide ? 'md:col-span-2' : ''}`}><Label>{label}</Label>{children}</div>;
 }
-
