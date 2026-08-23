@@ -9,11 +9,18 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { createAgent, updateAgent, deleteAgent, AgentInput } from '@/lib/actions/agents';
 import { useForm } from 'react-hook-form';
-import { Bot, Plus, Save, Trash2, BrainCircuit } from 'lucide-react';
+import { Bot, Plus, Save, Trash2, BrainCircuit, KeyRound } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 
 type Agent = { id: string; name: string; personality: string; provider: string; model?: string | null; apiKey?: string; isActive?: boolean | null; userId?: string; createdAt?: Date; updatedAt?: Date; hasApiKey?: boolean };
+
+const OPENAI_MODELS = [
+    { value: 'gpt-4o-mini', label: 'GPT-4o mini', description: 'Mais econômico para testes' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini', description: 'Melhor em seguir instruções' },
+    { value: 'gpt-4o', label: 'GPT-4o', description: 'Mais completo e mais caro' },
+    { value: 'gpt-4.1', label: 'GPT-4.1', description: 'Maior capacidade e custo' },
+] as const;
 
 interface Props {
     initialAgents: Agent[];
@@ -24,9 +31,34 @@ export function AgentsManager({ initialAgents }: Props) {
     const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
     const [isCreating, setIsCreating] = useState(false);
     const [saveError, setSaveError] = useState('');
+    const [isSelectingAgent, setIsSelectingAgent] = useState(false);
 
     const form = useForm<AgentInput>();
     const personalityLength = form.watch('personality')?.length || 0;
+    const activeAgentId = agents.find((agent) => agent.isActive)?.id || '';
+
+    const selectActiveAgent = async (agentId: string) => {
+        const agent = agents.find((item) => item.id === agentId);
+        if (!agent) return;
+        setSaveError('');
+        setIsSelectingAgent(true);
+        try {
+            await updateAgent(agent.id, {
+                name: agent.name,
+                personality: agent.personality,
+                provider: 'openai',
+                model: agent.model || 'gpt-4o-mini',
+                apiKey: agent.apiKey || '',
+                isActive: true,
+            });
+            setAgents((current) => current.map((item) => ({ ...item, isActive: item.id === agentId })));
+        } catch (error) {
+            console.error(error);
+            setSaveError('Não foi possível trocar o agente ativo. Tente novamente.');
+        } finally {
+            setIsSelectingAgent(false);
+        }
+    };
 
     const onSubmit = async (data: AgentInput) => {
         try {
@@ -34,7 +66,12 @@ export function AgentsManager({ initialAgents }: Props) {
             if (editingAgent) {
                 await updateAgent(editingAgent.id, data);
                 setAgents((current) => current.map((agent) => {
-                    if (agent.id === editingAgent.id) return { ...agent, ...data };
+                    if (agent.id === editingAgent.id) return {
+                        ...agent,
+                        ...data,
+                        hasApiKey: agent.hasApiKey || Boolean(data.apiKey),
+                        apiKey: data.apiKey ? '••••••••••••' : agent.apiKey,
+                    };
                     return data.isActive ? { ...agent, isActive: false } : agent;
                 }));
                 setEditingAgent(null);
@@ -99,6 +136,25 @@ export function AgentsManager({ initialAgents }: Props) {
                 )}
             </div>
 
+            {agents.length > 0 && (
+                <Card className="border-primary/20">
+                    <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <p className="font-medium">Agente que responde no WhatsApp</p>
+                            <p className="text-sm text-muted-foreground">Somente o agente selecionado abaixo responderá aos leads.</p>
+                        </div>
+                        <Select value={activeAgentId} onValueChange={selectActiveAgent} disabled={isSelectingAgent}>
+                            <SelectTrigger className="w-full md:w-[280px]">
+                                <SelectValue placeholder="Selecione um agente" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {agents.map((agent) => <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </CardContent>
+                </Card>
+            )}
+
             {(isCreating || editingAgent) && (
                 <Card className="border-primary/20 shadow-primary/5 animate-in fade-in slide-in-from-top-4">
                     <CardHeader>
@@ -129,14 +185,29 @@ export function AgentsManager({ initialAgents }: Props) {
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="model">Modelo Específico (opcional)</Label>
-                                    <Input id="model" placeholder="Ex: gpt-4o-mini" {...form.register('model')} />
+                                    <Label htmlFor="model">Modelo da OpenAI</Label>
+                                    <Select value={form.watch('model') || 'gpt-4o-mini'} onValueChange={(value) => form.setValue('model', value, { shouldDirty: true })}>
+                                        <SelectTrigger id="model">
+                                            <SelectValue placeholder="Selecione o modelo" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {OPENAI_MODELS.map((model) => (
+                                                <SelectItem key={model.value} value={model.value}>
+                                                    {model.label} — {model.description}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                 </div>
 
                                 <div className="space-y-2">
                                     <Label htmlFor="apiKey">API Key</Label>
                                     <Input id="apiKey" type="password" placeholder="sk-..." {...form.register('apiKey')} />
-                                    <p className="text-xs text-muted-foreground">A chave é criptografada antes de ser salva. Ao editar, deixe vazio para manter a atual.</p>
+                                    {editingAgent?.hasApiKey ? (
+                                        <p className="flex items-center gap-1 text-xs text-green-600"><KeyRound className="h-3 w-3" />Chave salva com segurança. Deixe vazio para manter ou digite uma nova para substituir.</p>
+                                    ) : (
+                                        <p className="text-xs text-muted-foreground">A chave será criptografada antes de ser salva.</p>
+                                    )}
                                 </div>
                             </div>
 
@@ -218,6 +289,11 @@ export function AgentsManager({ initialAgents }: Props) {
                                     <span className="flex items-center text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-slate-500 mr-1"></span>Inativo</span>
                                 )}
                             </CardDescription>
+                            <div className="mt-2">
+                                <Badge variant="secondary" className={agent.hasApiKey ? 'text-green-700' : ''}>
+                                    <KeyRound className="mr-1 h-3 w-3" />{agent.hasApiKey ? 'API configurada' : 'Chave geral do servidor'}
+                                </Badge>
+                            </div>
                         </CardHeader>
                         <CardContent>
                             <p className="text-sm text-muted-foreground line-clamp-3">

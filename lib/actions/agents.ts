@@ -30,15 +30,17 @@ export async function createAgent(input: AgentInput) {
   const dbUser = await getDbUser();
   const data = agentSchema.parse(input);
   const agentId = randomUUID();
-  if (data.isActive) {
-    await db.update(agents).set({ isActive: false, updatedAt: new Date() })
-      .where(eq(agents.userId, dbUser.id));
-  }
-  await db.insert(agents).values({
-    id: agentId,
-    userId: dbUser.id,
-    ...data,
-    apiKey: data.apiKey ? encryptSecret(data.apiKey) : null,
+  await db.transaction(async (tx) => {
+    if (data.isActive) {
+      await tx.update(agents).set({ isActive: false, updatedAt: new Date() })
+        .where(eq(agents.userId, dbUser.id));
+    }
+    await tx.insert(agents).values({
+      id: agentId,
+      userId: dbUser.id,
+      ...data,
+      apiKey: data.apiKey ? encryptSecret(data.apiKey) : null,
+    });
   });
   revalidatePath('/dashboard/agents');
   return { success: true, agentId };
@@ -51,16 +53,18 @@ export async function updateAgent(agentId: string, input: AgentInput) {
     where: and(eq(agents.id, agentId), eq(agents.userId, dbUser.id)),
   });
   if (!existing) throw new Error('Agente não encontrado');
-  if (data.isActive) {
-    await db.update(agents).set({ isActive: false, updatedAt: new Date() })
-      .where(and(eq(agents.userId, dbUser.id), ne(agents.id, agentId)));
-  }
   const apiKey = data.apiKey && !data.apiKey.startsWith('•')
     ? encryptSecret(data.apiKey)
     : existing.apiKey;
-  await db.update(agents)
-    .set({ ...data, apiKey, updatedAt: new Date() })
-    .where(and(eq(agents.id, agentId), eq(agents.userId, dbUser.id)));
+  await db.transaction(async (tx) => {
+    if (data.isActive) {
+      await tx.update(agents).set({ isActive: false, updatedAt: new Date() })
+        .where(and(eq(agents.userId, dbUser.id), ne(agents.id, agentId)));
+    }
+    await tx.update(agents)
+      .set({ ...data, apiKey, updatedAt: new Date() })
+      .where(and(eq(agents.id, agentId), eq(agents.userId, dbUser.id)));
+  });
   revalidatePath('/dashboard/agents');
   return { success: true };
 }
