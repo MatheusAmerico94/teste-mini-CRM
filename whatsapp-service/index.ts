@@ -20,7 +20,7 @@ import { processIncomingMessage } from '../lib/services/chat';
 
 const port = Number(process.env.PORT || 3001);
 const serviceToken = process.env.WHATSAPP_SERVICE_TOKEN;
-const sessionRoot = path.resolve(process.env.WHATSAPP_SESSION_DIR || './whatsapp-session');
+let sessionRoot = path.resolve(process.env.WHATSAPP_SESSION_DIR || './whatsapp-session');
 const connectionString = process.env.DATABASE_URL;
 if (!serviceToken) throw new Error('WHATSAPP_SERVICE_TOKEN não configurado');
 if (!connectionString) throw new Error('DATABASE_URL não configurada');
@@ -66,7 +66,14 @@ async function startSocket(requestedUserId?: string) {
     throw new Error('Este serviço pertence a outro usuário');
   }
   try {
-    await fs.mkdir(sessionRoot, { recursive: true });
+    try {
+      await fs.mkdir(sessionRoot, { recursive: true });
+    } catch (error) {
+      const code = error instanceof Error && 'code' in error ? error.code : undefined;
+      if (code !== 'EACCES' && code !== 'EROFS') throw error;
+      sessionRoot = path.resolve('/tmp/whatsapp-session');
+      await fs.mkdir(sessionRoot, { recursive: true });
+    }
     const { state, saveCreds } = await useMultiFileAuthState(sessionRoot);
     const { version } = await fetchLatestBaileysVersion();
     sock = makeWASocket({

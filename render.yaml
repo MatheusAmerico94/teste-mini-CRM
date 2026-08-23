@@ -3,17 +3,13 @@ services:
   - type: web
     name: mini-crm-whatsapp-bot
     env: node
-    plan: starter
+    plan: free
     buildCommand: npm install && npm run build:whatsapp
     startCommand: npm run start:whatsapp
     envVars:
       - key: NODE_ENV
         value: production
       - key: WHATSAPP_SESSION_DIR
-        value: /var/data/whatsapp-session
+        value: /tmp/whatsapp-session
       # Preencher no painel: DATABASE_URL, APP_ENCRYPTION_KEY,
       # OPENAI_API_KEY (opcional), CRM_OWNER_EMAIL e WHATSAPP_SERVICE_TOKEN.
-    disk:
-      name: whatsapp-session
-      mountPath: /var/data
-      sizeGB: 1
