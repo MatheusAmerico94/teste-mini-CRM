@@ -1,11 +1,16 @@
 import { UserButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { LayoutDashboard, Users, Settings, Zap, Menu, Bot, Smartphone, MessageSquare } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ModeToggle } from "@/components/ModeToggle";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+    const { userId } = await auth();
+    if (!userId) redirect('/sign-in');
+
     return (
         <div className="flex min-h-screen bg-muted/20 dark:bg-slate-950">
             {/* Sidebar Desktop */}
