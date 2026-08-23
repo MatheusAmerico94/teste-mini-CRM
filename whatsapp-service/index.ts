@@ -12,7 +12,7 @@ import QRCode from 'qrcode';
 import pino from 'pino';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import * as schema from '../lib/db/schema';
@@ -184,7 +184,7 @@ app.post('/send', authorize, async (req, res) => {
 app.listen(port, () => {
   console.log(`Serviço WhatsApp ouvindo na porta ${port}`);
   resolveOwnerUserId().then(async (userId) => {
-    const connection = await db.query.whatsappConnections.findFirst({ where: and(eq(schema.whatsappConnections.userId, userId), eq(schema.whatsappConnections.status, 'connected')) });
-    if (connection) startSocket(userId).catch(console.error);
+    const connection = await db.query.whatsappConnections.findFirst({ where: eq(schema.whatsappConnections.userId, userId) });
+    if (connection && ['connected', 'qr'].includes(connection.status)) startSocket(userId).catch(console.error);
   }).catch((error) => console.warn(error.message));
 });
