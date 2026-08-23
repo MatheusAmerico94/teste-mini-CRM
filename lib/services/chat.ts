@@ -1,9 +1,9 @@
-import { db } from '@/lib/db';
-import { activities, agents, businessSettings, leads, messages, portfolioItems, servicePackages } from '@/lib/db/schema';
+import { db } from '../db';
+import { activities, agents, businessSettings, leads, messages, portfolioItems, servicePackages } from '../db/schema';
 import { and, desc, eq } from 'drizzle-orm';
 import OpenAI from 'openai/index.js';
 import { randomUUID } from 'crypto';
-import { decryptSecret } from '@/lib/security/crypto';
+import { decryptSecret } from '../security/crypto';
 
 type MediaData = { type: 'image'; base64: string } | undefined;
 type AgentResult = {
