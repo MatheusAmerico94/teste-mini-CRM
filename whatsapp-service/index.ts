@@ -103,17 +103,21 @@ async function startSocket(requestedUserId?: string) {
       if (type !== 'notify') return;
       for (const msg of incoming) {
         if (msg.key.fromMe || !msg.key.remoteJid || isJidBroadcast(msg.key.remoteJid)) continue;
-        const jid = msg.key.remoteJid;
-        const phone = jid.split('@')[0];
-        const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '';
-        let mediaData: { type: 'image'; base64: string } | undefined;
-        if (msg.message?.imageMessage) {
-          const buffer = await downloadMediaMessage(msg, 'buffer', {});
-          mediaData = { type: 'image', base64: buffer.toString('base64') };
+        try {
+          const jid = msg.key.remoteJid;
+          const phone = jid.split('@')[0];
+          const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '';
+          let mediaData: { type: 'image'; base64: string } | undefined;
+          if (msg.message?.imageMessage) {
+            const buffer = await downloadMediaMessage(msg, 'buffer', {});
+            mediaData = { type: 'image', base64: buffer.toString('base64') };
+          }
+          if (!text && !mediaData) continue;
+          const reply = await processIncomingMessage(userId, phone, text, mediaData, msg.key.id || undefined);
+          if (reply) await sock?.sendMessage(jid, { text: reply });
+        } catch (error) {
+          logger.error({ err: error, messageId: msg.key.id }, 'falha ao processar mensagem recebida');
         }
-        if (!text && !mediaData) continue;
-        const reply = await processIncomingMessage(userId, phone, text, mediaData, msg.key.id || undefined);
-        if (reply) await sock?.sendMessage(jid, { text: reply });
       }
     });
   } catch (error) {

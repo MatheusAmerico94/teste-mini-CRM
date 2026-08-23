@@ -5,7 +5,7 @@ export const leadStatusSchema = z.enum(LEAD_STATUSES.map(({ id }) => id) as [str
 
 export const agentSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  personality: z.string().trim().min(20).max(6000),
+  personality: z.string().trim().min(20).max(20000),
   provider: z.literal('openai').default('openai'),
   model: z.string().trim().min(1).max(80).default('gpt-4o-mini'),
   apiKey: z.string().trim().max(300).optional(),
@@ -30,4 +30,3 @@ export const packageSchema = z.object({
   deliveryDays: z.coerce.number().int().min(0).max(365),
   isActive: z.boolean().default(true),
 });
-

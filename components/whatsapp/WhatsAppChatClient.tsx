@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { confirmManualPayment, getLeadMessages, setLeadAutomation } from '@/lib/actions/leads';
+import { confirmManualPayment, getLeadMessages, getLeads, setLeadAutomation } from '@/lib/actions/leads';
 import { sendManualMessage } from '@/lib/actions/whatsapp';
 import { UserCircle2, Search, MoreVertical, MessageSquare, ArrowLeft, Bot, UserRoundCheck, BadgeCheck, Send, Smartphone } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -26,17 +26,58 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
 
     const selectedLead = leads.find(l => l.id === selectedLeadId);
 
-    // Fetch messages when a lead is selected
+    // Keep the inbox and the selected chat synchronized with WhatsApp.
     useEffect(() => {
-        if (selectedLeadId) {
-            setIsLoadingMsgs(true);
-            getLeadMessages(selectedLeadId).then(msgs => {
-                setMessages(msgs);
-                setIsLoadingMsgs(false);
-            });
-        } else {
+        let active = true;
+        let timer: number | undefined;
+        const refreshLeads = async () => {
+            try {
+                if (document.visibilityState === 'visible') {
+                    const latestLeads = await getLeads();
+                    if (active) setLeads(latestLeads);
+                }
+            } catch (error) {
+                console.error('Falha ao atualizar conversas', error);
+            } finally {
+                if (active) timer = window.setTimeout(refreshLeads, 10000);
+            }
+        };
+        void refreshLeads();
+        return () => {
+            active = false;
+            if (timer) window.clearTimeout(timer);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!selectedLeadId) {
             setMessages([]);
+            setIsLoadingMsgs(false);
+            return;
         }
+        let active = true;
+        let timer: number | undefined;
+        setIsLoadingMsgs(true);
+        const refreshMessages = async () => {
+            try {
+                if (document.visibilityState === 'visible') {
+                    const latestMessages = await getLeadMessages(selectedLeadId);
+                    if (active) setMessages(latestMessages);
+                }
+            } catch (error) {
+                console.error('Falha ao atualizar mensagens', error);
+            } finally {
+                if (active) {
+                    setIsLoadingMsgs(false);
+                    timer = window.setTimeout(refreshMessages, 3000);
+                }
+            }
+        };
+        void refreshMessages();
+        return () => {
+            active = false;
+            if (timer) window.clearTimeout(timer);
+        };
     }, [selectedLeadId]);
 
     // Auto scroll to bottom of messages

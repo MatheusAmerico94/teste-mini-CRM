@@ -23,31 +23,41 @@ export function AgentsManager({ initialAgents }: Props) {
     const [agents, setAgents] = useState<Agent[]>(initialAgents);
     const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
     const [isCreating, setIsCreating] = useState(false);
+    const [saveError, setSaveError] = useState('');
 
     const form = useForm<AgentInput>();
+    const personalityLength = form.watch('personality')?.length || 0;
 
     const onSubmit = async (data: AgentInput) => {
         try {
+            setSaveError('');
             if (editingAgent) {
                 await updateAgent(editingAgent.id, data);
-                setAgents(agents.map(a => a.id === editingAgent.id ? { ...a, ...data } : a));
+                setAgents((current) => current.map((agent) => {
+                    if (agent.id === editingAgent.id) return { ...agent, ...data };
+                    return data.isActive ? { ...agent, isActive: false } : agent;
+                }));
                 setEditingAgent(null);
             } else {
                 const res = await createAgent(data);
                 if (res.success) {
                     // Optimistic update, ignoring id/timestamps for simply rendering the list
-                    setAgents([{ id: res.agentId, ...data, provider: 'openai', apiKey: data.apiKey ? '••••••••••••' : '', hasApiKey: Boolean(data.apiKey) }, ...agents]);
+                    setAgents((current) => [
+                        { id: res.agentId, ...data, provider: 'openai', apiKey: data.apiKey ? '••••••••••••' : '', hasApiKey: Boolean(data.apiKey) },
+                        ...current.map((agent) => data.isActive ? { ...agent, isActive: false } : agent),
+                    ]);
                     setIsCreating(false);
                 }
             }
             form.reset();
         } catch (error) {
             console.error(error);
-            alert('Erro ao salvar agente');
+            setSaveError('Não foi possível salvar o agente. Confira os campos e tente novamente.');
         }
     };
 
     const handleEdit = (agent: Agent) => {
+        setSaveError('');
         setEditingAgent(agent);
         setIsCreating(false);
         form.reset({
@@ -68,6 +78,7 @@ export function AgentsManager({ initialAgents }: Props) {
     };
 
     const cancelEdit = () => {
+        setSaveError('');
         setEditingAgent(null);
         setIsCreating(false);
         form.reset();
@@ -135,8 +146,17 @@ export function AgentsManager({ initialAgents }: Props) {
                                     id="personality"
                                     className="min-h-[150px] font-mono text-sm"
                                     placeholder="Você é um vendedor persuasivo mas amigável. Seu objetivo é descobrir a necessidade do cliente e agendar uma call. Responda sempre de forma curta e direta."
-                                    {...form.register('personality', { required: true })}
+                                    maxLength={20000}
+                                    {...form.register('personality', {
+                                        required: 'A personalidade é obrigatória.',
+                                        minLength: { value: 20, message: 'Use pelo menos 20 caracteres.' },
+                                        maxLength: { value: 20000, message: 'O limite é de 20.000 caracteres.' },
+                                    })}
                                 />
+                                <div className="flex justify-between gap-4 text-xs">
+                                    <span className="text-red-600">{form.formState.errors.personality?.message}</span>
+                                    <span className="ml-auto text-muted-foreground">{personalityLength.toLocaleString('pt-BR')} / 20.000</span>
+                                </div>
                             </div>
 
                             <div className="flex items-center space-x-2 pt-4">
@@ -150,6 +170,7 @@ export function AgentsManager({ initialAgents }: Props) {
 
                         </CardContent>
                         <CardFooter className="flex justify-end gap-2 bg-muted/50 py-4 mt-4">
+                            {saveError && <p role="alert" className="mr-auto text-sm text-red-600">{saveError}</p>}
                             <Button type="button" variant="ghost" onClick={cancelEdit}>Cancelar</Button>
                             <Button type="submit" className="bg-primary hover:bg-primary/90">
                                 <Save className="mr-2 h-4 w-4" /> Salvar Agente
