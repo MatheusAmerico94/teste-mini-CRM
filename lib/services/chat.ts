@@ -1,11 +1,11 @@
 import { db } from '../db';
 import { activities, agents, businessSettings, leads, messages, portfolioItems, servicePackages } from '../db/schema';
 import { and, desc, eq, or } from 'drizzle-orm';
-import OpenAI from 'openai/index.js';
+import OpenAI, { toFile } from 'openai/index.js';
 import { randomUUID } from 'crypto';
 import { decryptSecret } from '../security/crypto';
 
-type MediaData = { type: 'image'; base64: string } | undefined;
+type MediaData = { type: 'image' | 'audio'; base64: string; mimeType?: string } | undefined;
 type ContactData = { name?: string; avatarUrl?: string; legacyNumber?: string };
 type AgentResult = {
   reply: string;
@@ -62,25 +62,39 @@ export async function processIncomingMessage(
   }
   if (!lead) throw new Error('Não foi possível criar o lead');
 
+  const activeAgent = await db.query.agents.findFirst({ where: and(eq(agents.userId, userId), eq(agents.isActive, true)) });
+  const apiKey = decryptSecret(activeAgent?.apiKey) || process.env.OPENAI_API_KEY;
+  if (mediaData?.type === 'audio') {
+    if (!apiKey) throw new Error('Nenhuma chave da OpenAI configurada para transcrever o áudio');
+    const transcriptionClient = new OpenAI({ apiKey });
+    const audioFile = await toFile(Buffer.from(mediaData.base64, 'base64'), 'mensagem.ogg', {
+      type: mediaData.mimeType || 'audio/ogg',
+    });
+    const transcription = await transcriptionClient.audio.transcriptions.create({
+      file: audioFile,
+      model: 'gpt-4o-mini-transcribe',
+    });
+    messageBody = transcription.text.trim();
+    if (!messageBody) throw new Error('O áudio não produziu uma transcrição');
+  }
+
   await db.insert(messages).values({
     id: randomUUID(), userId, leadId: lead.id, role: 'user',
-    content: messageBody || '[Imagem recebida]', externalId: externalId || null,
-    messageType: mediaData ? 'image' : 'text',
+    content: mediaData?.type === 'audio' ? `[Áudio] ${messageBody}` : messageBody || '[Imagem recebida]', externalId: externalId || null,
+    messageType: mediaData?.type || 'text',
   });
 
   if (!lead.aiEnabled || ['pago', 'aguardando_fotos', 'producao', 'entregue'].includes(lead.status || '')) {
     return null;
   }
 
-  const [activeAgent, settings, packages, portfolio, history] = await Promise.all([
-    db.query.agents.findFirst({ where: and(eq(agents.userId, userId), eq(agents.isActive, true)) }),
+  const [settings, packages, portfolio, history] = await Promise.all([
     db.query.businessSettings.findFirst({ where: eq(businessSettings.userId, userId) }),
     db.select().from(servicePackages).where(and(eq(servicePackages.userId, userId), eq(servicePackages.isActive, true))),
     db.select().from(portfolioItems).where(and(eq(portfolioItems.userId, userId), eq(portfolioItems.isActive, true))),
     db.select().from(messages).where(eq(messages.leadId, lead.id)).orderBy(desc(messages.createdAt)).limit(12),
   ]);
 
-  const apiKey = decryptSecret(activeAgent?.apiKey) || process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('Nenhuma chave da OpenAI configurada');
   if (!activeAgent) throw new Error('Nenhum agente ativo configurado');
 
@@ -110,7 +124,7 @@ Regras obrigatórias:
 - Retorne somente JSON: {"reply":"texto", "temperature":"frio|morno|quente", "nextStatus":"atendimento|oferta|aguardando_pix", "memoryUpdate":{}}.`;
 
   const client = new OpenAI({ apiKey });
-  const content: any = mediaData ? [
+  const content: any = mediaData?.type === 'image' ? [
     { type: 'text', text: messageBody || 'O cliente enviou esta imagem como referência.' },
     { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } },
   ] : messageBody;

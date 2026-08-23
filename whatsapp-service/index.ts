@@ -120,10 +120,13 @@ async function startSocket(requestedUserId?: string) {
             // Foto ausente ou protegida pelas configurações de privacidade do contato.
           }
           const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '';
-          let mediaData: { type: 'image'; base64: string } | undefined;
+          let mediaData: { type: 'image' | 'audio'; base64: string; mimeType?: string } | undefined;
           if (msg.message?.imageMessage) {
             const buffer = await downloadMediaMessage(msg, 'buffer', {});
-            mediaData = { type: 'image', base64: buffer.toString('base64') };
+            mediaData = { type: 'image', base64: buffer.toString('base64'), mimeType: msg.message.imageMessage.mimetype || 'image/jpeg' };
+          } else if (msg.message?.audioMessage) {
+            const buffer = await downloadMediaMessage(msg, 'buffer', {});
+            mediaData = { type: 'audio', base64: buffer.toString('base64'), mimeType: msg.message.audioMessage.mimetype || 'audio/ogg' };
           }
           if (!text && !mediaData) continue;
           const reply = await processIncomingMessage(userId, phone, text, mediaData, msg.key.id || undefined, {
