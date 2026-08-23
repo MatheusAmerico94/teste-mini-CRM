@@ -10,7 +10,7 @@ type ContactData = { name?: string; avatarUrl?: string; legacyNumber?: string };
 type AgentResult = {
   reply: string;
   temperature: 'frio' | 'morno' | 'quente';
-  nextStatus?: 'atendimento' | 'oferta' | 'aguardando_pix';
+  nextStatus?: 'atendimento' | 'oferta' | 'aguardando_pix' | 'comprovante_recebido';
   memoryUpdate?: Record<string, string | number | boolean>;
 };
 
@@ -85,7 +85,7 @@ export async function processIncomingMessage(
     messageType: mediaData?.type || 'text',
   });
 
-  if (!lead.aiEnabled || ['pago', 'aguardando_fotos', 'producao', 'entregue'].includes(lead.status || '')) {
+  if (!lead.aiEnabled || ['comprovante_recebido', 'pago', 'aguardando_fotos', 'producao', 'entregue'].includes(lead.status || '')) {
     return null;
   }
 
@@ -127,12 +127,18 @@ Regras obrigatórias:
 - Nunca invente preço, pacote, quantidade, prazo, desconto, URL ou dado Pix.
 - Para perguntas sobre preço ou pacotes, use exclusivamente os Pacotes autorizados acima e informe claramente nome, preço, quantidade de imagens e prazo.
 - Se houver mais de um pacote, ajude o cliente a escolher comparando apenas os dados cadastrados, sem criar vantagens ou descontos inexistentes.
+- O estúdio pode criar ensaios com IA de qualquer tema, ocasião ou cenário solicitado: gestante, aniversário, casamento, infantil, corporativo, fantasia, viagem, lugares impossíveis, lua, foguete e outros. A ausência de um exemplo no portfólio não significa que o ensaio não possa ser feito.
+- Nunca diga que um tema não é oferecido apenas porque ele não aparece no Portfólio autorizado. Explique que o cenário pode ser criado com IA e confirme os detalhes desejados pelo cliente.
 - Não confirme pagamento. Diga que a confirmação é manual.
 - Só envie a chave Pix depois que o cliente escolher claramente um pacote.
+- Quando receber uma imagem que possa ser comprovante Pix, verifique visualmente: favorecido e chave Pix em comparação aos dados informados acima, valor em comparação ao pacote escolhido, data e hora, identificação da transação e principalmente se consta como pagamento concluído/efetivado ou apenas agendado.
+- Mesmo que todos os dados pareçam corretos, nunca afirme que o pagamento foi confirmado, verdadeiro ou compensado. Diga somente que recebeu o comprovante e que ele será conferido manualmente.
+- Se a imagem parecer comprovante, use nextStatus="comprovante_recebido", registre em memoryUpdate apenas os sinais visíveis relevantes e encerre a automação para uma pessoa conferir.
+- Se estiver escrito "agendamento", "agendado", "pagamento futuro" ou equivalente, avise de forma neutra que o documento aparenta ser um agendamento e que a conferência será manual. Não acuse o cliente de fraude.
 - Faça no máximo uma pergunta por mensagem e escreva de forma natural e curta.
 - Se não houver pacote ou Pix configurado, explique que uma pessoa continuará o atendimento.
 - Se o cliente pedir uma pessoa, responda de forma breve e não tente pressioná-lo.
-- Retorne somente JSON: {"reply":"texto", "temperature":"frio|morno|quente", "nextStatus":"atendimento|oferta|aguardando_pix", "memoryUpdate":{}}.`;
+- Retorne somente JSON: {"reply":"texto", "temperature":"frio|morno|quente", "nextStatus":"atendimento|oferta|aguardando_pix|comprovante_recebido", "memoryUpdate":{}}.`;
 
   const client = new OpenAI({ apiKey });
   const content: any = mediaData?.type === 'image' ? [
@@ -154,15 +160,18 @@ Regras obrigatórias:
   if (!reply) throw new Error('A OpenAI retornou uma resposta vazia');
 
   const temperature = ['frio', 'morno', 'quente'].includes(parsed.temperature || '') ? parsed.temperature! : lead.temperature || 'frio';
-  const allowedStatuses = ['atendimento', 'oferta', 'aguardando_pix'];
+  const allowedStatuses = ['atendimento', 'oferta', 'aguardando_pix', 'comprovante_recebido'];
   const nextStatus = allowedStatuses.includes(parsed.nextStatus || '') ? parsed.nextStatus! : lead.status || 'atendimento';
   const memory = parsed.memoryUpdate && typeof parsed.memoryUpdate === 'object'
     ? { ...safeMemory(lead.persistentMemory), ...parsed.memoryUpdate } : safeMemory(lead.persistentMemory);
 
   await db.transaction(async (tx) => {
+    const requiresHumanReview = nextStatus === 'comprovante_recebido';
     await tx.insert(messages).values({ id: randomUUID(), userId, leadId: lead.id, role: 'assistant', content: reply });
     await tx.update(leads).set({
       status: nextStatus, temperature, persistentMemory: JSON.stringify(memory),
+      aiEnabled: requiresHumanReview ? false : lead.aiEnabled,
+      handoffAt: requiresHumanReview ? new Date() : lead.handoffAt,
       estimatedValue: nextStatus === 'aguardando_pix' && catalog.length === 1 ? catalog[0].price : lead.estimatedValue,
       updatedAt: new Date(),
     }).where(and(eq(leads.id, lead.id), eq(leads.userId, userId)));

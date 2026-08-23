@@ -3,6 +3,7 @@ export const LEAD_STATUSES = [
   { id: 'atendimento', label: 'Em atendimento' },
   { id: 'oferta', label: 'Oferta enviada' },
   { id: 'aguardando_pix', label: 'Aguardando Pix' },
+  { id: 'comprovante_recebido', label: 'Conferir comprovante' },
   { id: 'pago', label: 'Pago' },
   { id: 'aguardando_fotos', label: 'Aguardando fotos' },
   { id: 'producao', label: 'Em produção' },
@@ -12,6 +13,7 @@ export const LEAD_STATUSES = [
 export type LeadStatus = (typeof LEAD_STATUSES)[number]['id'];
 
 export const AUTOMATION_BLOCKED_STATUSES = new Set<LeadStatus>([
+  'comprovante_recebido',
   'pago',
   'aguardando_fotos',
   'producao',
@@ -21,4 +23,3 @@ export const AUTOMATION_BLOCKED_STATUSES = new Set<LeadStatus>([
 export function isLeadStatus(value: string): value is LeadStatus {
   return LEAD_STATUSES.some((status) => status.id === value);
 }
-
