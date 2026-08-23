@@ -74,8 +74,9 @@ export async function processIncomingMessage(
       file: audioFile,
       model: 'gpt-4o-mini-transcribe',
     });
-    messageBody = transcription.text.trim();
-    if (!messageBody) throw new Error('O áudio não produziu uma transcrição');
+    const transcriptionText = transcription.text.trim();
+    if (!transcriptionText) throw new Error('O áudio não produziu uma transcrição');
+    messageBody = [messageBody.trim(), transcriptionText].filter(Boolean).join('\n');
   }
 
   await db.insert(messages).values({

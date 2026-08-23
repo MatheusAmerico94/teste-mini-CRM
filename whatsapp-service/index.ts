@@ -38,6 +38,7 @@ let starting = false;
 let sessionRevision = 0;
 let persistTimer: NodeJS.Timeout | null = null;
 let persistQueue = Promise.resolve();
+const pendingConversations = new Map<string, { userId: string; socket: any; messages: any[]; timer: NodeJS.Timeout }>();
 
 function authorize(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (req.headers.authorization !== `Bearer ${serviceToken}`) return res.status(401).json({ error: 'Não autorizado' });
@@ -92,12 +93,86 @@ function scheduleSessionPersist(userId: string, revision: number) {
   }, 400);
 }
 
+function clearPendingMessages(socket: any) {
+  for (const [key, pending] of pendingConversations) {
+    if (pending.socket !== socket) continue;
+    clearTimeout(pending.timer);
+    pendingConversations.delete(key);
+  }
+}
+
+async function processIncomingBatch(userId: string, currentSocket: any, incoming: any[]) {
+  if (sock !== currentSocket || incoming.length === 0) return;
+  const lastMessage = incoming[incoming.length - 1];
+  const jid = lastMessage.key.remoteJid;
+  const phoneJid = [...incoming].reverse().map((msg) => msg.key.senderPn || msg.key.participantPn).find(Boolean)
+    || (jid.endsWith('@s.whatsapp.net') ? jid : null);
+  const phone = phoneJid?.split('@')[0];
+  if (!phone) {
+    logger.warn({ jid }, 'mensagens sem número de telefone resolvido');
+    return;
+  }
+
+  const text = incoming.map((msg) => (
+    msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || ''
+  )).filter(Boolean).join('\n');
+  const mediaMessage = [...incoming].reverse().find((msg) => msg.message?.imageMessage || msg.message?.audioMessage);
+  let mediaData: { type: 'image' | 'audio'; base64: string; mimeType?: string } | undefined;
+  if (mediaMessage?.message?.imageMessage) {
+    const buffer = await downloadMediaMessage(mediaMessage, 'buffer', {});
+    mediaData = { type: 'image', base64: buffer.toString('base64'), mimeType: mediaMessage.message.imageMessage.mimetype || 'image/jpeg' };
+  } else if (mediaMessage?.message?.audioMessage) {
+    const buffer = await downloadMediaMessage(mediaMessage, 'buffer', {});
+    mediaData = { type: 'audio', base64: buffer.toString('base64'), mimeType: mediaMessage.message.audioMessage.mimetype || 'audio/ogg' };
+  }
+  if (!text && !mediaData) return;
+
+  const legacyNumber = jid.endsWith('@lid') ? jid.split('@')[0] : undefined;
+  const contactName = [...incoming].reverse().map((msg) => String(msg.pushName || '').trim()).find(Boolean) || undefined;
+  let avatarUrl: string | undefined;
+  try {
+    avatarUrl = await currentSocket.profilePictureUrl(phoneJid || jid, 'preview');
+  } catch {
+    // Foto ausente ou protegida pelas configurações de privacidade do contato.
+  }
+
+  const ids = incoming.map((msg) => msg.key.id).filter(Boolean);
+  const externalId = ids.length ? `batch:${ids.join(':')}` : undefined;
+  const reply = await processIncomingMessage(userId, phone, text, mediaData, externalId, {
+    name: contactName,
+    avatarUrl,
+    legacyNumber,
+  });
+  if (!reply || sock !== currentSocket) return;
+  try {
+    await currentSocket.readMessages(incoming.map((msg) => msg.key));
+  } catch (error) {
+    logger.warn({ err: error, messageIds: ids }, 'falha ao confirmar leitura');
+  }
+  await currentSocket.sendMessage(jid, { text: reply });
+}
+
+function queueIncomingMessage(userId: string, currentSocket: any, msg: any) {
+  const key = `${userId}:${msg.key.remoteJid}`;
+  const existing = pendingConversations.get(key);
+  if (existing) clearTimeout(existing.timer);
+  const messages = existing && existing.socket === currentSocket ? [...existing.messages, msg] : [msg];
+  const timer = setTimeout(() => {
+    pendingConversations.delete(key);
+    processIncomingBatch(userId, currentSocket, messages).catch((error) => {
+      logger.error({ err: error, messageIds: messages.map((item) => item.key.id) }, 'falha ao processar grupo de mensagens');
+    });
+  }, 5000);
+  pendingConversations.set(key, { userId, socket: currentSocket, messages, timer });
+}
+
 async function resetSession(userId: string, logout: boolean) {
   sessionRevision += 1;
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = null;
   const currentSocket = sock;
   sock = null;
+  clearPendingMessages(currentSocket);
   if (currentSocket) {
     try {
       if (logout && currentSocket.user) await currentSocket.logout();
@@ -163,6 +238,7 @@ async function startSocket(requestedUserId?: string) {
       if (connection === 'close') {
         const reason = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
         const reconnect = reason !== DisconnectReason.loggedOut;
+        clearPendingMessages(currentSocket);
         sock = null;
         await updateConnection(userId, { status: 'disconnected', qrCode: null, lastError: reconnect ? 'Conexão interrompida; reconectando.' : null });
         if (reconnect) setTimeout(() => startSocket().catch(console.error), 3000);
@@ -173,48 +249,7 @@ async function startSocket(requestedUserId?: string) {
       if (type !== 'notify') return;
       for (const msg of incoming) {
         if (msg.key.fromMe || !msg.key.remoteJid || isJidBroadcast(msg.key.remoteJid)) continue;
-        try {
-          const jid = msg.key.remoteJid;
-          const phoneJid = msg.key.senderPn || msg.key.participantPn || (jid.endsWith('@s.whatsapp.net') ? jid : null);
-          const phone = phoneJid?.split('@')[0];
-          if (!phone) {
-            logger.warn({ jid, messageId: msg.key.id }, 'mensagem sem número de telefone resolvido');
-            continue;
-          }
-          const legacyNumber = jid.endsWith('@lid') ? jid.split('@')[0] : undefined;
-          const contactName = String(msg.pushName || '').trim() || undefined;
-          let avatarUrl: string | undefined;
-          try {
-            avatarUrl = await currentSocket.profilePictureUrl(phoneJid || jid, 'preview');
-          } catch {
-            // Foto ausente ou protegida pelas configurações de privacidade do contato.
-          }
-          const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '';
-          let mediaData: { type: 'image' | 'audio'; base64: string; mimeType?: string } | undefined;
-          if (msg.message?.imageMessage) {
-            const buffer = await downloadMediaMessage(msg, 'buffer', {});
-            mediaData = { type: 'image', base64: buffer.toString('base64'), mimeType: msg.message.imageMessage.mimetype || 'image/jpeg' };
-          } else if (msg.message?.audioMessage) {
-            const buffer = await downloadMediaMessage(msg, 'buffer', {});
-            mediaData = { type: 'audio', base64: buffer.toString('base64'), mimeType: msg.message.audioMessage.mimetype || 'audio/ogg' };
-          }
-          if (!text && !mediaData) continue;
-          const reply = await processIncomingMessage(userId, phone, text, mediaData, msg.key.id || undefined, {
-            name: contactName,
-            avatarUrl,
-            legacyNumber,
-          });
-          if (reply) {
-            try {
-              await currentSocket.readMessages([msg.key]);
-            } catch (error) {
-              logger.warn({ err: error, messageId: msg.key.id }, 'falha ao confirmar leitura');
-            }
-            await currentSocket.sendMessage(jid, { text: reply });
-          }
-        } catch (error) {
-          logger.error({ err: error, messageId: msg.key.id }, 'falha ao processar mensagem recebida');
-        }
+        queueIncomingMessage(userId, currentSocket, msg);
       }
     });
   } catch (error) {
