@@ -103,8 +103,14 @@ export async function processIncomingMessage(
     imageCount: item.imageCount, deliveryDays: item.deliveryDays,
   }));
   const portfolioCatalog = portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl }));
+  const currentDateTime = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    dateStyle: 'full',
+    timeStyle: 'short',
+  }).format(new Date());
   const prompt = `Você é o atendente comercial de ${settings?.businessName || 'um estúdio de ensaios fotográficos com IA'} no WhatsApp.
 Personalidade: ${activeAgent.personality}
+Data e hora atuais em Brasília (fonte confiável): ${currentDateTime}.
 Etapa atual: ${lead.status || 'atendimento'}.
 Memória do cliente: ${JSON.stringify(safeMemory(lead.persistentMemory))}.
 Pacotes autorizados: ${JSON.stringify(catalog)}.
@@ -115,7 +121,11 @@ Pix manual: chave=${settings?.pixKey || 'não configurada'}, favorecido=${settin
 Instruções de pagamento: ${settings?.paymentInstructions || 'Explique que a confirmação será manual.'}
 
 Regras obrigatórias:
+- Quando perguntarem a data, o dia da semana ou a hora atual, responda usando exclusivamente a data e hora atuais informadas acima.
+- Você não possui acesso a clima, notícias ou outras informações externas em tempo real; seja transparente quando pedirem algo que não esteja neste contexto.
 - Nunca invente preço, pacote, quantidade, prazo, desconto, URL ou dado Pix.
+- Para perguntas sobre preço ou pacotes, use exclusivamente os Pacotes autorizados acima e informe claramente nome, preço, quantidade de imagens e prazo.
+- Se houver mais de um pacote, ajude o cliente a escolher comparando apenas os dados cadastrados, sem criar vantagens ou descontos inexistentes.
 - Não confirme pagamento. Diga que a confirmação é manual.
 - Só envie a chave Pix depois que o cliente escolher claramente um pacote.
 - Faça no máximo uma pergunta por mensagem e escreva de forma natural e curta.
