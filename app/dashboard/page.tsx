@@ -1,10 +1,13 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { RevenueChart, FunnelBarChart, SourcePieChart } from "@/components/dashboard/charts";
-import { DollarSign, TrendingUp, Users, Activity, Flame, Bot, Smartphone } from "lucide-react";
+import { FunnelBarChart } from "@/components/dashboard/charts";
+import { DollarSign, Users, Activity, Flame, Bot, Smartphone } from "lucide-react";
 import { getLeads } from '@/lib/actions/leads';
 import { getAgents } from '@/lib/actions/agents';
 import { getConnectionStatus } from '@/lib/actions/whatsapp';
 import { Badge } from "@/components/ui/badge";
+import { LEAD_STATUSES } from '@/lib/crm';
+
+export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
     const [leads, agents, whatsapp] = await Promise.all([
@@ -17,20 +20,18 @@ export default async function DashboardPage() {
     const totalLeads = leads.length;
 
     const revenue = leads
-        .filter(l => l.status === 'fechado')
+        .filter(l => ['pago', 'aguardando_fotos', 'producao', 'entregue'].includes(l.status || ''))
         .reduce((sum, l) => sum + Number(l.estimatedValue || 0), 0);
 
-    const activeProposals = leads.filter(l => l.status === 'proposta');
+    const activeProposals = leads.filter(l => ['oferta', 'aguardando_pix'].includes(l.status || ''));
     const pipelineValue = activeProposals.reduce((sum, l) => sum + Number(l.estimatedValue || 0), 0);
 
     // Calculate funnel dynamically
-    const funnelCounts = {
-        'novo': leads.filter(l => l.status === 'novo').length,
-        'contato': leads.filter(l => l.status === 'contato').length,
-        'proposta': activeProposals.length,
-        'negociacao': leads.filter(l => l.status === 'negociacao').length,
-        'fechado': leads.filter(l => l.status === 'fechado').length,
-    };
+    const funnelData = LEAD_STATUSES.map((status, index) => ({
+        name: status.label,
+        value: leads.filter((lead) => lead.status === status.id).length,
+        fill: ['#64748b', '#0ea5e9', '#8b5cf6', '#f59e0b', '#22c55e', '#14b8a6', '#f97316', '#16a34a'][index],
+    }));
 
     // Calculate hot leads
     const hotLeads = leads.filter(l => l.temperature === 'quente').length;
@@ -154,7 +155,7 @@ export default async function DashboardPage() {
                     <CardContent>
                         {/* We pass dynamically calculated properties or wrap charts if needed. For now, using mock charts for aesthetics */}
                         <div className="h-[300px] w-full bg-slate-50 rounded-lg flex items-center justify-center border-dashed border-2 border-slate-200">
-                            <FunnelBarChart />
+                            <FunnelBarChart data={funnelData} />
                         </div>
                     </CardContent>
                 </Card>

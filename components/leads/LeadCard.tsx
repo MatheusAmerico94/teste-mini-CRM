@@ -3,15 +3,18 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Phone, Building2, UserCircle2, Thermometer, ThermometerSun, Flame, MessageSquare } from 'lucide-react';
+import { Phone, Building2, UserCircle2, Thermometer, ThermometerSun, Flame, MessageSquare, Bot, UserRoundCheck, BadgeCheck } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { getLeadMessages } from '@/lib/actions/leads';
+import { confirmManualPayment, getLeadMessages, setLeadAutomation } from '@/lib/actions/leads';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
 
 export function LeadCard({ lead, attributes, listeners, setNodeRef, transform, isDragging }: any) {
     const [messages, setMessages] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
+    const [aiEnabled, setAiEnabled] = useState(Boolean(lead.aiEnabled));
+    const [paid, setPaid] = useState(lead.status === 'pago' || Boolean(lead.paidAt));
 
     useEffect(() => {
         if (isOpen) {
@@ -91,6 +94,15 @@ export function LeadCard({ lead, attributes, listeners, setNodeRef, transform, i
                             Conversa com {lead.name}
                         </DialogTitle>
                     </DialogHeader>
+
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant={aiEnabled ? 'destructive' : 'default'} size="sm" disabled={paid && !aiEnabled} onClick={async () => { const enabled = !aiEnabled; await setLeadAutomation(lead.id, enabled); setAiEnabled(enabled); }}>
+                            {aiEnabled ? <><UserRoundCheck className="mr-2 h-4 w-4" />Assumir conversa</> : <><Bot className="mr-2 h-4 w-4" />Devolver para IA</>}
+                        </Button>
+                        <Button variant="outline" size="sm" disabled={paid} onClick={async () => { await confirmManualPayment(lead.id); setPaid(true); setAiEnabled(false); }}>
+                            <BadgeCheck className="mr-2 h-4 w-4" />{paid ? 'Pagamento confirmado' : 'Confirmar Pix manual'}
+                        </Button>
+                    </div>
 
                     <div className="bg-slate-50 dark:bg-slate-900 rounded-md p-4 mt-2 h-[400px] flex flex-col">
                         {isLoading ? (

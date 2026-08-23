@@ -1,6 +1,8 @@
 import { getAgents } from '@/lib/actions/agents';
 import { AgentsManager } from '@/components/agents/AgentsManager';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AgentsPage() {
     try {
         const agents = await getAgents();

@@ -45,3 +45,14 @@ next-env.d.ts
 sqlite.db
 drizzle/
 .wwebjs_auth/
+/whatsapp-auth-*/
+.tmp/
+/whatsapp-service/leads-memory.json
+/whatsapp-session/
+/dist/
+
+.vercel
+.env*.local
+
+# clerk configuration (can include secrets)
+/.clerk/

@@ -1,21 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { updateLeadStatus } from '@/lib/actions/leads';
+import { createLead, updateLeadStatus } from '@/lib/actions/leads';
 import { LeadCard } from './LeadCard';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import { LEAD_STATUSES } from '@/lib/crm';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
-const COLUMNS = [
-    { id: 'novo', label: 'Novo Lead', color: 'bg-slate-50', border: 'border-slate-200' },
-    { id: 'contato', label: 'Contato Feito', color: 'bg-orange-50/30', border: 'border-orange-200/50' },
-    { id: 'proposta', label: 'Proposta Enviada', color: 'bg-slate-50', border: 'border-slate-200' },
-    { id: 'negociacao', label: 'Negociação', color: 'bg-orange-50', border: 'border-orange-200' },
-    { id: 'fechado', label: 'Fechado', color: 'bg-green-50', border: 'border-green-200' },
-];
+const COLUMNS = LEAD_STATUSES.map((status) => ({ ...status, color: 'bg-slate-50/70', border: 'border-slate-200' }));
 
 export function KanbanBoard({ initialLeads }: { initialLeads: any[] }) {
     const [leads, setLeads] = useState(initialLeads);
+    const [isCreating, setIsCreating] = useState(false);
+    const [draft, setDraft] = useState({ name: '', phone: '', email: '', estimatedValue: 0 });
 
     // In a real implementation with @dnd-kit installed, we would use DndContext, useDroppable, useDraggable.
     // Since we are mocking due to environment constraints, we will build the visual structure 
@@ -24,7 +24,15 @@ export function KanbanBoard({ initialLeads }: { initialLeads: any[] }) {
     const handleMove = async (leadId: string, newStatus: string) => {
         // Optimistic Update
         setLeads(leads.map(l => l.id === leadId ? { ...l, status: newStatus } : l));
-        await updateLeadStatus(leadId, newStatus);
+        try { await updateLeadStatus(leadId, newStatus); }
+        catch { setLeads(leads); alert('Não foi possível mover o lead.'); }
+    };
+
+    const handleCreate = async () => {
+        const result = await createLead(draft);
+        setLeads([{ id: result.leadId, ...draft, status: 'novo', temperature: 'frio', aiEnabled: true, createdAt: new Date(), updatedAt: new Date() }, ...leads]);
+        setDraft({ name: '', phone: '', email: '', estimatedValue: 0 });
+        setIsCreating(false);
     };
 
     return (
@@ -58,7 +66,7 @@ export function KanbanBoard({ initialLeads }: { initialLeads: any[] }) {
                                         {/* Temporary manual move buttons since DND might not be installed */}
                                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 z-10 flex gap-1 transition-opacity">
                                             {column.id !== 'novo' && <Button size="icon" variant="secondary" className="h-6 w-6 text-xs" onClick={() => handleMove(lead.id, COLUMNS[COLUMNS.findIndex(c => c.id === column.id) - 1].id)}>←</Button>}
-                                            {column.id !== 'fechado' && <Button size="icon" variant="secondary" className="h-6 w-6 text-xs" onClick={() => handleMove(lead.id, COLUMNS[COLUMNS.findIndex(c => c.id === column.id) + 1].id)}>→</Button>}
+                                            {column.id !== 'entregue' && <Button size="icon" variant="secondary" className="h-6 w-6 text-xs" onClick={() => handleMove(lead.id, COLUMNS[COLUMNS.findIndex(c => c.id === column.id) + 1].id)}>→</Button>}
                                         </div>
                                         <LeadCard lead={lead} />
                                     </div>
@@ -71,11 +79,7 @@ export function KanbanBoard({ initialLeads }: { initialLeads: any[] }) {
                                 )}
                             </div>
 
-                            {column.id === 'novo' && (
-                                <Button variant="outline" className="w-full mt-4 bg-white/50 hover:bg-white border-dashed">
-                                    <Plus className="w-4 h-4 mr-2" /> Adicionar Lead
-                                </Button>
-                            )}
+                            {column.id === 'novo' && <Dialog open={isCreating} onOpenChange={setIsCreating}><DialogTrigger asChild><Button variant="outline" className="w-full mt-4 bg-white/50 hover:bg-white border-dashed"><Plus className="w-4 h-4 mr-2" />Adicionar lead</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>Novo lead</DialogTitle></DialogHeader><div className="space-y-4"><div><Label>Nome</Label><Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></div><div><Label>WhatsApp</Label><Input value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} /></div><div><Label>E-mail</Label><Input value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} /></div><div><Label>Valor estimado</Label><Input type="number" value={draft.estimatedValue} onChange={(e) => setDraft({ ...draft, estimatedValue: Number(e.target.value) })} /></div><Button className="w-full" disabled={!draft.name.trim()} onClick={handleCreate}>Criar lead</Button></div></DialogContent></Dialog>}
                         </div>
                     </div>
                 );

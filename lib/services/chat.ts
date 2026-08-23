@@ -1,175 +1,131 @@
 import { db } from '@/lib/db';
-import { agents, leads, activities } from '@/lib/db/schema';
-import * as schema from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
-import OpenAI from 'openai';
+import { activities, agents, businessSettings, leads, messages, portfolioItems, servicePackages } from '@/lib/db/schema';
+import { and, desc, eq } from 'drizzle-orm';
+import OpenAI from 'openai/index.js';
+import { randomUUID } from 'crypto';
+import { decryptSecret } from '@/lib/security/crypto';
 
-async function callOpenAI(apiKey: string, model: string, systemPrompt: string, userMessage: string, history: any[] = []): Promise<{ reply: string, analysis: { isInterested: boolean, temperature: 'frio' | 'morno' | 'quente' } }> {
-    const openai = new OpenAI({ apiKey });
+type MediaData = { type: 'image'; base64: string } | undefined;
+type AgentResult = {
+  reply: string;
+  temperature: 'frio' | 'morno' | 'quente';
+  nextStatus?: 'atendimento' | 'oferta' | 'aguardando_pix';
+  memoryUpdate?: Record<string, string | number | boolean>;
+};
 
-    const completion = await openai.chat.completions.create({
-        model: model || "gpt-3.5-turbo",
-        messages: [
-            { role: "system", content: systemPrompt },
-            ...history,
-            { role: "user", content: userMessage }
-        ],
-        // Using response_format to ensure we get both a reply and the JSON classification
-        response_format: { type: "json_object" }
-    });
-
-    const responseContent = completion.choices[0].message.content || "{}";
-
-    try {
-        const parsed = JSON.parse(responseContent);
-        return {
-            reply: parsed.reply || "Mensagem recebida.",
-            analysis: {
-                isInterested: parsed.temperature === 'quente' || parsed.temperature === 'morno',
-                temperature: ['frio', 'morno', 'quente'].includes(parsed.temperature) ? parsed.temperature : 'frio'
-            }
-        };
-    } catch (e) {
-        console.error("Failed to parse OpenAI JSON response", e);
-        return { reply: "Olá! Recebemos sua mensagem.", analysis: { isInterested: false, temperature: 'frio' } };
-    }
+function safeMemory(value: string | null) {
+  try { return value ? JSON.parse(value) : {}; } catch { return {}; }
 }
 
-export async function processIncomingMessage(userId: string, contactNumber: string, messageBody: string) {
-    console.log(`Nova mensagem de ${contactNumber}: ${messageBody}`);
+export async function processIncomingMessage(
+  userId: string,
+  contactNumber: string,
+  messageBody: string,
+  mediaData?: MediaData,
+  externalId?: string,
+) {
+  if (externalId) {
+    const duplicate = await db.query.messages.findFirst({ where: eq(messages.externalId, externalId) });
+    if (duplicate) return null;
+  }
 
-    // 1. Find the active agent for this user
-    const activeAgent = await db.query.agents.findFirst({
-        where: and(
-            eq(agents.userId, userId),
-            eq(agents.isActive, true)
-        )
+  let lead = await db.query.leads.findFirst({
+    where: and(eq(leads.userId, userId), eq(leads.phone, contactNumber)),
+  });
+  if (!lead) {
+    const id = randomUUID();
+    await db.insert(leads).values({
+      id, userId, name: contactNumber, phone: contactNumber,
+      status: 'atendimento', temperature: 'frio', aiEnabled: true, source: 'whatsapp',
     });
+    lead = await db.query.leads.findFirst({ where: eq(leads.id, id) });
+  }
+  if (!lead) throw new Error('Não foi possível criar o lead');
 
-    if (!activeAgent || !activeAgent.apiKey) {
-        console.log("Nenhum agente ativo com API Key configurada encontrado para o usuário", userId);
-        return null;
-    }
+  await db.insert(messages).values({
+    id: randomUUID(), userId, leadId: lead.id, role: 'user',
+    content: messageBody || '[Imagem recebida]', externalId: externalId || null,
+    messageType: mediaData ? 'image' : 'text',
+  });
 
-    // 2. Find or create lead based on phone number
-    let lead = await db.query.leads.findFirst({
-        where: and(
-            eq(leads.userId, userId),
-            eq(leads.phone, contactNumber)
-        )
+  if (!lead.aiEnabled || ['pago', 'aguardando_fotos', 'producao', 'entregue'].includes(lead.status || '')) {
+    return null;
+  }
+
+  const [activeAgent, settings, packages, portfolio, history] = await Promise.all([
+    db.query.agents.findFirst({ where: and(eq(agents.userId, userId), eq(agents.isActive, true)) }),
+    db.query.businessSettings.findFirst({ where: eq(businessSettings.userId, userId) }),
+    db.select().from(servicePackages).where(and(eq(servicePackages.userId, userId), eq(servicePackages.isActive, true))),
+    db.select().from(portfolioItems).where(and(eq(portfolioItems.userId, userId), eq(portfolioItems.isActive, true))),
+    db.select().from(messages).where(eq(messages.leadId, lead.id)).orderBy(desc(messages.createdAt)).limit(12),
+  ]);
+
+  const apiKey = decryptSecret(activeAgent?.apiKey) || process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('Nenhuma chave da OpenAI configurada');
+  if (!activeAgent) throw new Error('Nenhum agente ativo configurado');
+
+  const catalog = packages.map((item) => ({
+    name: item.name, description: item.description, price: item.price,
+    imageCount: item.imageCount, deliveryDays: item.deliveryDays,
+  }));
+  const portfolioCatalog = portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl }));
+  const prompt = `Você é o atendente comercial de ${settings?.businessName || 'um estúdio de ensaios fotográficos com IA'} no WhatsApp.
+Personalidade: ${activeAgent.personality}
+Etapa atual: ${lead.status || 'atendimento'}.
+Memória do cliente: ${JSON.stringify(safeMemory(lead.persistentMemory))}.
+Pacotes autorizados: ${JSON.stringify(catalog)}.
+Portfólio autorizado: ${JSON.stringify(portfolioCatalog)}.
+Regras comerciais: ${settings?.salesInstructions || 'Seja breve, educado e conduza a conversa até a escolha de um pacote.'}
+Saudação preferida: ${settings?.defaultGreeting || ''}
+Pix manual: chave=${settings?.pixKey || 'não configurada'}, favorecido=${settings?.pixRecipient || 'não configurado'}.
+Instruções de pagamento: ${settings?.paymentInstructions || 'Explique que a confirmação será manual.'}
+
+Regras obrigatórias:
+- Nunca invente preço, pacote, quantidade, prazo, desconto, URL ou dado Pix.
+- Não confirme pagamento. Diga que a confirmação é manual.
+- Só envie a chave Pix depois que o cliente escolher claramente um pacote.
+- Faça no máximo uma pergunta por mensagem e escreva de forma natural e curta.
+- Se não houver pacote ou Pix configurado, explique que uma pessoa continuará o atendimento.
+- Se o cliente pedir uma pessoa, responda de forma breve e não tente pressioná-lo.
+- Retorne somente JSON: {"reply":"texto", "temperature":"frio|morno|quente", "nextStatus":"atendimento|oferta|aguardando_pix", "memoryUpdate":{}}.`;
+
+  const client = new OpenAI({ apiKey });
+  const content: any = mediaData ? [
+    { type: 'text', text: messageBody || 'O cliente enviou esta imagem como referência.' },
+    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } },
+  ] : messageBody;
+  const orderedHistory = history.reverse().slice(0, -1).map((item) => ({
+    role: item.role === 'user' ? 'user' as const : 'assistant' as const,
+    content: item.content,
+  }));
+  const completion = await client.chat.completions.create({
+    model: activeAgent.model || 'gpt-4o-mini',
+    response_format: { type: 'json_object' },
+    temperature: 0.4,
+    messages: [{ role: 'system', content: prompt }, ...orderedHistory, { role: 'user', content }],
+  });
+  const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}') as Partial<AgentResult>;
+  const reply = String(parsed.reply || '').trim();
+  if (!reply) throw new Error('A OpenAI retornou uma resposta vazia');
+
+  const temperature = ['frio', 'morno', 'quente'].includes(parsed.temperature || '') ? parsed.temperature! : lead.temperature || 'frio';
+  const allowedStatuses = ['atendimento', 'oferta', 'aguardando_pix'];
+  const nextStatus = allowedStatuses.includes(parsed.nextStatus || '') ? parsed.nextStatus! : lead.status || 'atendimento';
+  const memory = parsed.memoryUpdate && typeof parsed.memoryUpdate === 'object'
+    ? { ...safeMemory(lead.persistentMemory), ...parsed.memoryUpdate } : safeMemory(lead.persistentMemory);
+
+  await db.transaction(async (tx) => {
+    await tx.insert(messages).values({ id: randomUUID(), userId, leadId: lead.id, role: 'assistant', content: reply });
+    await tx.update(leads).set({
+      status: nextStatus, temperature, persistentMemory: JSON.stringify(memory),
+      estimatedValue: nextStatus === 'aguardando_pix' && catalog.length === 1 ? catalog[0].price : lead.estimatedValue,
+      updatedAt: new Date(),
+    }).where(and(eq(leads.id, lead.id), eq(leads.userId, userId)));
+    await tx.insert(activities).values({
+      id: randomUUID(), userId, leadId: lead.id, type: 'whatsapp_message',
+      content: `Cliente: ${messageBody || '[Imagem]'}\nIA: ${reply}`,
+      metadata: JSON.stringify({ fromStatus: lead.status, toStatus: nextStatus }),
     });
-
-    if (!lead) {
-        const leadId = crypto.randomUUID();
-        await db.insert(leads).values({
-            id: leadId,
-            userId: userId,
-            name: contactNumber, // Temporarily use number as name
-            phone: contactNumber,
-            status: 'novo',
-            temperature: 'frio'
-        });
-
-        lead = await db.query.leads.findFirst({ where: eq(leads.id, leadId) });
-    }
-
-    if (!lead) return null;
-
-    // 3. Fetch recent conversation history
-    const recentMessages = await db.query.messages.findMany({
-        where: eq(schema.messages.leadId, lead.id),
-        orderBy: (messages, { asc }) => [asc(messages.createdAt)],
-        limit: 10 // Pega as últimas 10 mensagens para memória
-    });
-
-    // Format history for OpenAI
-    const history = recentMessages.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'assistant',
-        content: msg.content
-    }));
-
-    // 4. Call LLM to get a reply and classify the lead
-    const systemPrompt = `
-Você é um assistente virtual pelo WhatsApp integrado a um CRM.
-O nome do seu contato é: ${lead.name !== lead.phone ? lead.name : 'Cliente'}
-Sua personalidade e objetivo: ${activeAgent.personality}
-
-O cliente acabou de enviar uma mensagem. O histórico da conversa foi fornecido.
-Retorne um JSON OBRIGATÓRIAMENTE com as seguintes chaves:
-{
-  "reply": "A SUA RESPOSTA PARA O CLIENTE (natural, amigável, seguindo sua personalidade)",
-  "temperature": "A temperatura atual do lead baseado na mensagem dele. Valores válidos: 'frio', 'morno', ou 'quente'."
-}
-
-Regras:
-- frio: pouquíssimo interesse, apenas curioso, ou resposta monossilábica.
-- morno: interesse demonstrado, fazendo perguntas sobre o produto/serviço.
-- quente: querendo fechar negócio, pedindo preços, links de pagamento, ou demonstrando urgência.
-    `;
-
-    // Wait for the result from OpenAI
-    let reply = "Mensagem recebida.";
-    let analysis: { isInterested: boolean; temperature: "frio" | "morno" | "quente"; } = { isInterested: false, temperature: 'frio' };
-
-    try {
-        if (activeAgent.provider === 'openai') {
-            const result = await callOpenAI(activeAgent.apiKey, activeAgent.model || 'gpt-3.5-turbo', systemPrompt, messageBody, history);
-            reply = result.reply;
-            analysis = result.analysis;
-        } else {
-            reply = `Olá! (Sou o agente ${activeAgent.name}, mas meu provedor não está configurado ainda)`;
-            analysis = { isInterested: false, temperature: 'frio' };
-        }
-    } catch (err) {
-        console.error("AI Error:", err);
-        return null;
-    }
-
-    // 5. Update the lead's temperature if it changed 
-    if (lead.temperature !== analysis.temperature) {
-        await db.update(leads)
-            .set({ temperature: analysis.temperature, updatedAt: new Date() })
-            .where(eq(leads.id, lead.id));
-
-        // Log the change
-        await db.insert(activities).values({
-            id: crypto.randomUUID(),
-            userId: userId,
-            leadId: lead.id,
-            type: 'temperature_changed',
-            content: `IA alterou a temperatura de ${lead.temperature} para ${analysis.temperature}`,
-            metadata: JSON.stringify({ from: lead.temperature, to: analysis.temperature })
-        });
-    }
-
-    // 6. Save BOTH messages to memory table
-    await db.insert(schema.messages).values([
-        {
-            id: crypto.randomUUID(),
-            userId: userId,
-            leadId: lead.id,
-            role: 'user',
-            content: messageBody
-        },
-        {
-            id: crypto.randomUUID(),
-            userId: userId,
-            leadId: lead.id,
-            role: 'assistant',
-            content: reply
-        }
-    ]);
-
-    // 7. Log the message activity for the dashboard UI
-    await db.insert(activities).values({
-        id: crypto.randomUUID(),
-        userId: userId,
-        leadId: lead.id,
-        type: 'whatsapp_message',
-        content: `Cliente: ${messageBody}\nIA: ${reply}`,
-        metadata: JSON.stringify({ direction: 'inbound_answered_by_ai' })
-    });
-
-    // 8. Return the reply to be sent back via WhatsApp
-    return reply;
+  });
+  return reply;
 }

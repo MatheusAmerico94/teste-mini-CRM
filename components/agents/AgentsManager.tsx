@@ -7,13 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { createAgent, updateAgent, deleteAgent, NewAgent } from '@/lib/actions/agents';
+import { createAgent, updateAgent, deleteAgent, AgentInput } from '@/lib/actions/agents';
 import { useForm } from 'react-hook-form';
 import { Bot, Plus, Save, Trash2, BrainCircuit } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 
-type Agent = NewAgent & { id: string };
+type Agent = { id: string; name: string; personality: string; provider: string; model?: string | null; apiKey?: string; isActive?: boolean | null; userId?: string; createdAt?: Date; updatedAt?: Date; hasApiKey?: boolean };
 
 interface Props {
     initialAgents: Agent[];
@@ -24,9 +24,9 @@ export function AgentsManager({ initialAgents }: Props) {
     const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
     const [isCreating, setIsCreating] = useState(false);
 
-    const form = useForm<Omit<Agent, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>();
+    const form = useForm<AgentInput>();
 
-    const onSubmit = async (data: Omit<Agent, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
+    const onSubmit = async (data: AgentInput) => {
         try {
             if (editingAgent) {
                 await updateAgent(editingAgent.id, data);
@@ -36,7 +36,7 @@ export function AgentsManager({ initialAgents }: Props) {
                 const res = await createAgent(data);
                 if (res.success) {
                     // Optimistic update, ignoring id/timestamps for simply rendering the list
-                    setAgents([{ id: res.agentId, ...data, userId: '', createdAt: new Date() as any, updatedAt: new Date() as any }, ...agents]);
+                    setAgents([{ id: res.agentId, ...data, provider: 'openai', apiKey: data.apiKey ? '••••••••••••' : '', hasApiKey: Boolean(data.apiKey) }, ...agents]);
                     setIsCreating(false);
                 }
             }
@@ -53,10 +53,10 @@ export function AgentsManager({ initialAgents }: Props) {
         form.reset({
             name: agent.name,
             personality: agent.personality,
-            provider: agent.provider,
-            model: agent.model,
-            apiKey: agent.apiKey,
-            isActive: agent.isActive,
+            provider: 'openai',
+            model: agent.model || 'gpt-4o-mini',
+            apiKey: '',
+            isActive: Boolean(agent.isActive),
         });
     };
 
@@ -82,7 +82,7 @@ export function AgentsManager({ initialAgents }: Props) {
                     <p className="text-muted-foreground">Gerencie os assistentes que interagem com seus leads.</p>
                 </div>
                 {!isCreating && !editingAgent && (
-                    <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', isActive: true }); }} className="bg-primary hover:bg-primary/90 text-white">
+                    <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', isActive: true }); }} className="bg-primary hover:bg-primary/90 text-white">
                         <Plus className="mr-2 h-4 w-4" /> Novo Agente
                     </Button>
                 )}
@@ -107,28 +107,25 @@ export function AgentsManager({ initialAgents }: Props) {
 
                                 <div className="space-y-2">
                                     <Label htmlFor="provider">Provedor de IA</Label>
-                                    <Select onValueChange={(v) => form.setValue('provider', v)} defaultValue={form.getValues('provider') || 'openai'}>
+                                    <Select onValueChange={() => form.setValue('provider', 'openai')} defaultValue="openai" disabled>
                                         <SelectTrigger>
                                             <SelectValue placeholder="Selecione..." />
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="openai">OpenAI</SelectItem>
-                                            <SelectItem value="groq">Groq</SelectItem>
-                                            <SelectItem value="gemini">Google Gemini</SelectItem>
-                                            <SelectItem value="anthropic">Anthropic</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
 
                                 <div className="space-y-2">
                                     <Label htmlFor="model">Modelo Específico (opcional)</Label>
-                                    <Input id="model" placeholder="Ex: gpt-4o, llama3-70b-8192" {...form.register('model')} />
+                                    <Input id="model" placeholder="Ex: gpt-4o-mini" {...form.register('model')} />
                                 </div>
 
                                 <div className="space-y-2">
                                     <Label htmlFor="apiKey">API Key</Label>
                                     <Input id="apiKey" type="password" placeholder="sk-..." {...form.register('apiKey')} />
-                                    <p className="text-xs text-muted-foreground">Suas chaves são armazenadas localmente no seu banco de dados isolado.</p>
+                                    <p className="text-xs text-muted-foreground">A chave é criptografada antes de ser salva. Ao editar, deixe vazio para manter a atual.</p>
                                 </div>
                             </div>
 
@@ -146,7 +143,7 @@ export function AgentsManager({ initialAgents }: Props) {
                                 <Switch
                                     id="isActive"
                                     checked={form.watch('isActive') as boolean}
-                                    onCheckedChange={(checked) => form.setValue('isActive', checked)}
+                                    onCheckedChange={(checked: boolean) => form.setValue('isActive', checked)}
                                 />
                                 <Label htmlFor="isActive">Agente Ativo (responderá mensagens no WhatsApp)</Label>
                             </div>
@@ -170,7 +167,7 @@ export function AgentsManager({ initialAgents }: Props) {
                         </div>
                         <h3 className="text-lg font-medium">Nenhum agente configurado</h3>
                         <p className="text-sm text-muted-foreground mt-1 mb-4">Crie seu primeiro agente de IA para automatizar seu WhatsApp.</p>
-                        <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', isActive: true }); }} variant="outline">Criar Agente</Button>
+                        <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', isActive: true }); }} variant="outline">Criar Agente</Button>
                     </div>
                 )}
                 {agents.map((agent) => (
@@ -203,7 +200,7 @@ export function AgentsManager({ initialAgents }: Props) {
                         </CardHeader>
                         <CardContent>
                             <p className="text-sm text-muted-foreground line-clamp-3">
-                                "{agent.personality}"
+                                &ldquo;{agent.personality}&rdquo;
                             </p>
                         </CardContent>
                     </Card>

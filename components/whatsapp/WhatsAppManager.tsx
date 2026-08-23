@@ -1,32 +1,23 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Smartphone, RefreshCcw, LogOut, CheckCircle2 } from 'lucide-react';
-import { getConnectionStatus, disconnectWhatsApp } from '@/lib/actions/whatsapp';
+import { connectWhatsApp, getConnectionStatus, disconnectWhatsApp } from '@/lib/actions/whatsapp';
+import Image from 'next/image';
 
 export function WhatsAppManager() {
     const [status, setStatus] = useState<'disconnected' | 'qr' | 'connected' | 'loading'>('loading');
     const [qrCode, setQrCode] = useState<string | null>(null);
-    const statusRef = useRef(status);
-
-    useEffect(() => {
-        statusRef.current = status;
-    }, [status]);
-
+    const [error, setError] = useState('');
     const handleConnect = async () => {
         setStatus('loading');
         try {
-            const conn = await getConnectionStatus();
-            if (conn) {
-                await fetch('/api/whatsapp', {
-                    method: 'POST',
-                    body: JSON.stringify({ userId: conn.userId, action: 'initialize' })
-                });
-            }
-        } catch (e) { console.error(e) }
+            setError('');
+            await connectWhatsApp();
+        } catch (e) { setError(e instanceof Error ? e.message : 'Falha ao iniciar conexão'); }
         await fetchStatus();
     };
 
@@ -36,6 +27,7 @@ export function WhatsAppManager() {
             if (conn) {
                 setStatus(conn.status as any);
                 setQrCode(conn.qrCode);
+                if (conn.lastError) setError(conn.lastError);
             } else {
                 setStatus('disconnected');
             }
@@ -49,11 +41,7 @@ export function WhatsAppManager() {
         fetchStatus();
 
         // Poll every 5 seconds, using ref to always have fresh status
-        const interval = setInterval(() => {
-            if (statusRef.current !== 'connected') {
-                fetchStatus();
-            }
-        }, 5000);
+        const interval = setInterval(fetchStatus, 5000);
 
         return () => clearInterval(interval);
     }, []); // Run once on mount only
@@ -107,9 +95,10 @@ export function WhatsAppManager() {
                             <p className="text-sm text-muted-foreground mb-6">
                                 O QR Code será gerado assim que o servidor iniciar o cliente do WhatsApp. Atualize a página ou aguarde.
                             </p>
-                            <Button onClick={fetchStatus} size="lg" className="bg-primary hover:bg-primary/90">
+                            <Button onClick={handleConnect} size="lg" className="bg-primary hover:bg-primary/90">
                                 <RefreshCcw className="mr-2 h-4 w-4" /> Tentar Conectar
                             </Button>
+                            {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
                         </div>
                     )}
 
@@ -118,7 +107,7 @@ export function WhatsAppManager() {
                             <div className="bg-white p-4 rounded-xl shadow-inner mb-6">
                                 {/* Normally use a QR Code library here or render the base64 image (from pupeteer) */}
                                 {qrCode.startsWith('data:image') ? (
-                                    <img src={qrCode} alt="WhatsApp QR Code" className="w-64 h-64" />
+                                    <Image src={qrCode} alt="WhatsApp QR Code" width={256} height={256} unoptimized />
                                 ) : (
                                     <div className="w-64 h-64 border-4 border-dashed border-slate-300 flex items-center justify-center bg-slate-50 relative overflow-hidden">
                                         {/* Fallback pattern mimicking QR code if only raw string is passed initially without image generator */}
@@ -132,6 +121,8 @@ export function WhatsAppManager() {
                             </p>
                         </div>
                     )}
+
+                    {status === 'qr' && !qrCode && <div className="text-center text-muted-foreground"><RefreshCcw className="mx-auto mb-3 h-8 w-8 animate-spin" /><p>Gerando QR Code real no serviço da Render…</p></div>}
 
                     {status === 'connected' && (
                         <div className="flex flex-col items-center text-center">

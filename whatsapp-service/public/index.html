@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM WhatsApp Dashboard</title>
+    <style>
+        :root {
+            --bg: #030712;
+            --card-bg: #111827;
+            --text: #f9fafb;
+            --primary: #6366f1;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background-color: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            max-width: 420px;
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        h1 {
+            font-size: 1.75rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        p {
+            color: #9ca3af;
+            font-size: 0.95rem;
+            margin-bottom: 2rem;
+        }
+        #qrcode-container {
+            background: white;
+            padding: 1.25rem;
+            border-radius: 1.25rem;
+            display: inline-block;
+            margin-bottom: 1.5rem;
+            min-width: 256px;
+            min-height: 256px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        #qrcode-container img {
+            max-width: 100%;
+            height: auto;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.6rem 1.2rem;
+            border-radius: 9999px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.03);
+            margin-top: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+            background: var(--warning);
+            box-shadow: 0 0 12px var(--warning);
+        }
+        .status-connected .status-dot {
+            background: var(--success);
+            box-shadow: 0 0 12px var(--success);
+        }
+        #instructions {
+            margin-top: 2rem;
+            text-align: left;
+            font-size: 0.85rem;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1.25rem;
+            border-radius: 1rem;
+            color: #9ca3af;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+        ol {
+            padding-left: 1.25rem;
+            margin: 0.75rem 0 0 0;
+        }
+        li {
+            margin-bottom: 0.6rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 CRM Atendimento</h1>
+        <p>Conecte o seu WhatsApp ao CRM</p>
+
+        <div id="qrcode-container">
+            <div id="loading" style="color: #4b5563;">Gerando QR Code...</div>
+        </div>
+
+        <div class="status-badge" id="status-container">
+            <span class="status-dot"></span>
+            <span id="status-text">Buscando Status...</span>
+        </div>
+
+        <div id="instructions">
+            <strong>Passo a passo:</strong>
+            <ol>
+                <li>Abra o WhatsApp no seu smartphone</li>
+                <li>Menu (ou Configurações) > Aparelhos Conectados</li>
+                <li>Selecione "Conectar um Aparelho"</li>
+                <li>Aponte o celular para esta tela</li>
+            </ol>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const qrContainer = document.getElementById('qrcode-container');
+        const statusText = document.getElementById('status-text');
+        const statusContainer = document.getElementById('status-container');
+
+        socket.on('qr', (url) => {
+            qrContainer.innerHTML = `<img src="${url}" alt="WhatsApp QR Code">`;
+            statusText.innerText = 'Aguardando Escaneamento';
+            statusContainer.classList.remove('status-connected');
+        });
+
+        socket.on('connected', () => {
+            qrContainer.innerHTML = '<div style="color: #10b981; font-weight: 600; font-size: 1.4rem;">✨ Conectado!</div>';
+            statusText.innerText = 'Serviço Ativo';
+            statusContainer.classList.add('status-connected');
+        });
+
+        socket.on('disconnected', () => {
+            qrContainer.innerHTML = '<div style="color: #4b5563;">Gerando novo QR Code...</div>';
+            statusText.innerText = 'Desconectado';
+            statusContainer.classList.remove('status-connected');
+        });
+    </script>
+</body>
+</html>

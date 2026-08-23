@@ -3,12 +3,17 @@ services:
   - type: web
     name: mini-crm-whatsapp-bot
     env: node
-    plan: free # Usa o plano gratuito da Render
+    plan: starter
     buildCommand: npm install && npm run build:whatsapp
     startCommand: npm run start:whatsapp
     envVars:
       - key: NODE_ENV
         value: production
-      # As chaves abaixo devem ser preenchidas no painel do Render!
-      # OPENAI_API_KEY
-      # DATABASE_URL (URL de conexão que você usa no seu Supabase)
+      - key: WHATSAPP_SESSION_DIR
+        value: /var/data/whatsapp-session
+      # Preencher no painel: DATABASE_URL, APP_ENCRYPTION_KEY,
+      # OPENAI_API_KEY (opcional), CRM_OWNER_EMAIL e WHATSAPP_SERVICE_TOKEN.
+    disk:
+      name: whatsapp-session
+      mountPath: /var/data
+      sizeGB: 1

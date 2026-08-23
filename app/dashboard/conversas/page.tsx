@@ -1,17 +1,20 @@
 import { getLeads } from '@/lib/actions/leads';
 import { WhatsAppChatClient } from '@/components/whatsapp/WhatsAppChatClient';
 
+export const dynamic = 'force-dynamic';
+
 export default async function ConversasPage({
     searchParams,
 }: {
-    searchParams: { leadId?: string }
+    searchParams: Promise<{ leadId?: string }>
 }) {
+    const params = await searchParams;
     // Fetch all leads for the sidebar
     const leads = await getLeads();
 
     return (
         <div className="h-[calc(100vh-8rem)] w-full flex flex-col bg-slate-50 dark:bg-slate-950 border rounded-xl overflow-hidden shadow-sm">
-            <WhatsAppChatClient initialLeads={leads} initialSelectedLeadId={searchParams.leadId} />
+            <WhatsAppChatClient initialLeads={leads} initialSelectedLeadId={params.leadId} />
         </div>
     );
 }

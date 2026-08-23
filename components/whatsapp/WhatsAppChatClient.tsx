@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { getLeadMessages } from '@/lib/actions/leads';
-import { UserCircle2, Search, MoreVertical, MessageSquare, Clock, ArrowLeft } from 'lucide-react';
+import { confirmManualPayment, getLeadMessages, setLeadAutomation } from '@/lib/actions/leads';
+import { sendManualMessage } from '@/lib/actions/whatsapp';
+import { UserCircle2, Search, MoreVertical, MessageSquare, ArrowLeft, Bot, UserRoundCheck, BadgeCheck, Send, Smartphone } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +15,7 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
     const [selectedLeadId, setSelectedLeadId] = useState<string | null>(initialSelectedLeadId || null);
     const [messages, setMessages] = useState<any[]>([]);
     const [isLoadingMsgs, setIsLoadingMsgs] = useState(false);
+    const [manualMessage, setManualMessage] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Filter leads based on search
@@ -46,6 +48,28 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
         if (temp === 'quente') return 'bg-red-500';
         if (temp === 'morno') return 'bg-orange-500';
         return 'bg-blue-500';
+    };
+
+    const updateSelectedLead = (data: Record<string, unknown>) => setLeads((current) => current.map((lead) => lead.id === selectedLeadId ? { ...lead, ...data } : lead));
+
+    const toggleAutomation = async () => {
+        if (!selectedLead) return;
+        const enabled = !selectedLead.aiEnabled;
+        await setLeadAutomation(selectedLead.id, enabled);
+        updateSelectedLead({ aiEnabled: enabled });
+    };
+
+    const confirmPayment = async () => {
+        if (!selectedLead) return;
+        await confirmManualPayment(selectedLead.id);
+        updateSelectedLead({ aiEnabled: false, status: 'pago', paidAt: new Date() });
+    };
+
+    const sendMessage = async () => {
+        if (!selectedLead || !manualMessage.trim()) return;
+        await sendManualMessage(selectedLead.id, manualMessage);
+        setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', content: manualMessage, createdAt: new Date() }]);
+        setManualMessage('');
     };
 
     return (
@@ -145,6 +169,10 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
                                 <Badge variant="secondary" className={`${getTemperatureColor(selectedLead.temperature)} text-white border-transparent`}>
                                     {selectedLead.temperature}
                                 </Badge>
+                                <Button size="sm" variant={selectedLead.aiEnabled ? 'destructive' : 'outline'} disabled={selectedLead.status === 'pago' && !selectedLead.aiEnabled} onClick={toggleAutomation}>
+                                    {selectedLead.aiEnabled ? <><UserRoundCheck className="mr-1 h-4 w-4" />Assumir</> : <><Bot className="mr-1 h-4 w-4" />Ativar IA</>}
+                                </Button>
+                                <Button size="sm" variant="outline" disabled={selectedLead.status === 'pago'} onClick={confirmPayment}><BadgeCheck className="mr-1 h-4 w-4" />Pix pago</Button>
                             </div>
                         </div>
 
@@ -194,23 +222,15 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
                             )}
                         </ScrollArea>
 
-                        {/* Message Input Mockup (Read-only for now since AI handles it) */}
                         <div className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center px-4 z-10 gap-2">
-                            <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-lg h-10 flex items-center px-4">
-                                <span className="text-slate-400 dark:text-slate-500 text-sm">
-                                    A IA está gerenciando esta conversa. Você pode acompanhar...
-                                </span>
-                            </div>
+                            <Input value={manualMessage} onChange={(e) => setManualMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendMessage(); }} placeholder={selectedLead.aiEnabled ? 'Assuma a conversa para responder manualmente' : 'Digite sua mensagem'} disabled={selectedLead.aiEnabled} className="flex-1 bg-white dark:bg-[#2a3942]" />
+                            <Button size="icon" onClick={sendMessage} disabled={selectedLead.aiEnabled || !manualMessage.trim()}><Send className="h-4 w-4" /></Button>
                         </div>
                     </>
                 ) : (
                     /* Empty State for Main Area */
                     <div className="flex-1 flex flex-col items-center justify-center text-center p-8 z-10">
-                        <img
-                            src="https://static.whatsapp.net/rsrc.php/v3/y6/r/wa669aeJeom.png"
-                            alt="WhatsApp Web"
-                            className="w-72 md:w-80 opacity-60 mb-8 max-w-full"
-                        />
+                        <div className="mb-8 flex h-32 w-32 items-center justify-center rounded-full bg-white/70 dark:bg-slate-800/70"><Smartphone className="h-16 w-16 text-[#667781]" /></div>
                         <h2 className="text-3xl font-light text-[#41525d] dark:text-[#e9edef] mb-4">
                             Mini CRM Web
                         </h2>

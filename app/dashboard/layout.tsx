@@ -1,6 +1,6 @@
 import { UserButton } from "@clerk/nextjs";
 import Link from 'next/link';
-import { LayoutDashboard, Users, Settings, LogOut, Zap, Menu, Bot, Smartphone, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, Zap, Menu, Bot, Smartphone, MessageSquare } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ModeToggle } from "@/components/ModeToggle";
@@ -38,6 +38,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     <Link href="/dashboard/leads">
                         <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground hover:text-foreground">
                             <Users className="mr-3 h-5 w-5" /> Leads
+                        </Button>
+                    </Link>
+                    <Link href="/dashboard/configuracoes">
+                        <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground hover:text-foreground">
+                            <Settings className="mr-3 h-5 w-5" /> Configuração comercial
                         </Button>
                     </Link>
                     <div className="mt-auto">
@@ -79,6 +84,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                         </Link>
                                         <Link href="/dashboard/leads" className="w-full">
                                             <Button variant="ghost" className="w-full justify-start"><Users className="mr-2" /> Leads</Button>
+                                        </Link>
+                                        <Link href="/dashboard/configuracoes" className="w-full">
+                                            <Button variant="ghost" className="w-full justify-start"><Settings className="mr-2" /> Configurações</Button>
                                         </Link>
                                     </nav>
                                 </div>

@@ -1,6 +1,8 @@
 import { getLeads } from '@/lib/actions/leads';
 import { KanbanBoard } from '@/components/leads/KanbanBoard';
 
+export const dynamic = 'force-dynamic';
+
 export default async function LeadsPage() {
     const leads = await getLeads();
 

@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, BarChart, Users, Zap, LayoutDashboard } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default function LandingPage() {
   return (
     <div className="flex flex-col min-h-screen bg-slate-950 text-slate-50 relative overflow-hidden">

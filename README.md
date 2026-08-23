@@ -1,5 +1,7 @@
 # Mini CRM Tutorial
 
+> A versão atual inclui atendimento por IA no WhatsApp via QR Code, pipeline para ensaios fotográficos com IA, Pix manual, atendimento humano e preparação para Vercel + Supabase + Render. Consulte [DEPLOY_CRM.md](DEPLOY_CRM.md) para a publicação atualizada.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app). It serves as a tutorial application for a Mini CRM system.
 
 ## Features

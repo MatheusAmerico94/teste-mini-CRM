@@ -1,18 +1,15 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+import { FlatCompat } from '@eslint/eslintrc';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
-]);
+const directory = path.dirname(fileURLToPath(import.meta.url));
+const compat = new FlatCompat({ baseDirectory: directory });
 
-export default eslintConfig;
+const config = [
+  { ignores: ['.next/**', 'out/**', 'build/**', 'dist/**', 'para-taynara/**', 'whatsapp-auth-*/**', 'scripts/**', 'test-memory.ts', 'next-env.d.ts'] },
+  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  { files: ['**/*.ts', '**/*.tsx'], rules: { '@typescript-eslint/no-explicit-any': 'off' } },
+  { files: ['whatsapp-service/**/*.ts'], rules: { 'react-hooks/rules-of-hooks': 'off' } },
+];
+
+export default config;

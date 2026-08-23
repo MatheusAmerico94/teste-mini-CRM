@@ -11,13 +11,7 @@ const revenueData = [
     { name: 'Jun', value: 8500 },
 ];
 
-const funnelData = [
-    { name: 'Leads', value: 120, fill: '#f97316' },
-    { name: 'Contato', value: 85, fill: '#8b5cf6' },
-    { name: 'Proposta', value: 45, fill: '#ec4899' },
-    { name: 'Negociação', value: 20, fill: '#f97316' },
-    { name: 'Fechado', value: 12, fill: '#10b981' },
-];
+const defaultFunnelData = [{ name: 'Sem leads', value: 0, fill: '#94a3b8' }];
 
 const sourceData = [
     { name: 'LinkedIn', value: 400, fill: '#0077b5' },
@@ -49,16 +43,16 @@ export function RevenueChart() {
     );
 }
 
-export function FunnelBarChart() {
+export function FunnelBarChart({ data = defaultFunnelData }: { data?: Array<{ name: string; value: number; fill: string }> }) {
     return (
         <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={funnelData} layout="vertical" margin={{ left: 20 }}>
+            <BarChart data={data} layout="vertical" margin={{ left: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#334155" opacity={0.5} />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" width={80} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8' }} />
                 <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc' }} />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={30}>
-                    {funnelData.map((entry, index) => (
+                    {data.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
                     ))}
                 </Bar>

@@ -1,0 +1,29 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { AUTOMATION_BLOCKED_STATUSES, isLeadStatus, LEAD_STATUSES } from '../lib/crm';
+import { decryptSecret, encryptSecret, maskSecret } from '../lib/security/crypto';
+import { packageSchema } from '../lib/validation';
+
+test('pipeline contém as oito etapas comerciais na ordem esperada', () => {
+  assert.deepEqual(LEAD_STATUSES.map(({ id }) => id), [
+    'novo', 'atendimento', 'oferta', 'aguardando_pix',
+    'pago', 'aguardando_fotos', 'producao', 'entregue',
+  ]);
+  assert.equal(isLeadStatus('pago'), true);
+  assert.equal(isLeadStatus('fechado'), false);
+  assert.equal(AUTOMATION_BLOCKED_STATUSES.has('pago'), true);
+});
+
+test('chave da API é criptografada e pode ser recuperada', () => {
+  process.env.APP_ENCRYPTION_KEY = 'test-key-with-more-than-thirty-two-characters';
+  const encrypted = encryptSecret('sk-test-secret');
+  assert.notEqual(encrypted, 'sk-test-secret');
+  assert.equal(decryptSecret(encrypted), 'sk-test-secret');
+  assert.equal(maskSecret(encrypted), '••••••••••••');
+});
+
+test('pacotes rejeitam valores comerciais inválidos', () => {
+  assert.equal(packageSchema.safeParse({ name: 'Completo', price: 50, imageCount: 10, deliveryDays: 3, isActive: true }).success, true);
+  assert.equal(packageSchema.safeParse({ name: 'X', price: -1, imageCount: 0, deliveryDays: -2, isActive: true }).success, false);
+});
+
