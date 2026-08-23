@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import * as schema from '../lib/db/schema';
 import { processIncomingMessage } from '../lib/services/chat';
+import { decryptSecret, encryptSecret } from '../lib/security/crypto';
 
 const port = Number(process.env.PORT || 3001);
 const serviceToken = process.env.WHATSAPP_SERVICE_TOKEN;
@@ -34,6 +35,9 @@ app.use(express.json({ limit: '1mb' }));
 let sock: any = null;
 let ownerUserId: string | null = null;
 let starting = false;
+let sessionRevision = 0;
+let persistTimer: NodeJS.Timeout | null = null;
+let persistQueue = Promise.resolve();
 
 function authorize(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (req.headers.authorization !== `Bearer ${serviceToken}`) return res.status(401).json({ error: 'Não autorizado' });
@@ -52,9 +56,59 @@ async function resolveOwnerUserId() {
 
 async function updateConnection(userId: string, values: Partial<typeof schema.whatsappConnections.$inferInsert>) {
   const existing = await db.query.whatsappConnections.findFirst({ where: eq(schema.whatsappConnections.userId, userId) });
-  const safeValues = { ...values, sessionData: null, updatedAt: new Date() };
+  const safeValues = { ...values, updatedAt: new Date() };
   if (existing) await db.update(schema.whatsappConnections).set(safeValues).where(eq(schema.whatsappConnections.userId, userId));
   else await db.insert(schema.whatsappConnections).values({ id: randomUUID(), userId, status: 'disconnected', ...safeValues });
+}
+
+async function restorePersistedSession(userId: string) {
+  const localFiles: string[] = await fs.readdir(sessionRoot).catch((): string[] => []);
+  if (localFiles.includes('creds.json')) return;
+  const connection = await db.query.whatsappConnections.findFirst({ where: eq(schema.whatsappConnections.userId, userId) });
+  const serialized = decryptSecret(connection?.sessionData);
+  if (!serialized) return;
+  const files = JSON.parse(serialized) as Record<string, string>;
+  for (const [filename, contents] of Object.entries(files)) {
+    if (path.basename(filename) !== filename || !filename.endsWith('.json')) continue;
+    await fs.writeFile(path.join(sessionRoot, filename), contents, 'utf8');
+  }
+}
+
+async function persistSession(userId: string, revision: number) {
+  if (revision !== sessionRevision) return;
+  const filenames = (await fs.readdir(sessionRoot).catch((): string[] => [])).filter((filename) => filename.endsWith('.json'));
+  if (!filenames.includes('creds.json')) return;
+  const entries = await Promise.all(filenames.map(async (filename) => [filename, await fs.readFile(path.join(sessionRoot, filename), 'utf8')] as const));
+  if (revision !== sessionRevision) return;
+  await updateConnection(userId, { sessionData: encryptSecret(JSON.stringify(Object.fromEntries(entries))) });
+}
+
+function scheduleSessionPersist(userId: string, revision: number) {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistQueue = persistQueue.then(() => persistSession(userId, revision)).catch((error) => {
+      logger.error({ err: error }, 'falha ao salvar sessão do WhatsApp');
+    });
+  }, 400);
+}
+
+async function resetSession(userId: string, logout: boolean) {
+  sessionRevision += 1;
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = null;
+  const currentSocket = sock;
+  sock = null;
+  if (currentSocket) {
+    try {
+      if (logout && currentSocket.user) await currentSocket.logout();
+      else currentSocket.end(new Error('Sessão reiniciada'));
+    } catch (error) {
+      logger.warn({ err: error }, 'falha ao encerrar socket anterior');
+    }
+  }
+  await fs.rm(sessionRoot, { recursive: true, force: true });
+  await fs.mkdir(sessionRoot, { recursive: true });
+  await updateConnection(userId, { status: 'disconnected', qrCode: null, phoneNumber: null, lastError: null, sessionData: null });
 }
 
 async function startSocket(requestedUserId?: string) {
@@ -74,21 +128,36 @@ async function startSocket(requestedUserId?: string) {
       sessionRoot = path.resolve('/tmp/whatsapp-session');
       await fs.mkdir(sessionRoot, { recursive: true });
     }
+    await restorePersistedSession(userId);
+    const revision = sessionRevision;
     const { state, saveCreds } = await useMultiFileAuthState(sessionRoot);
+    const persistentKeys = {
+      get: state.keys.get.bind(state.keys),
+      set: async (data: Parameters<typeof state.keys.set>[0]) => {
+        await state.keys.set(data);
+        scheduleSessionPersist(userId, revision);
+      },
+    };
     const { version } = await fetchLatestBaileysVersion();
-    sock = makeWASocket({
+    const currentSocket = makeWASocket({
       version,
-      auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
+      auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(persistentKeys, logger) },
       browser: Browsers.ubuntu('Chrome'), logger, generateHighQualityLinkPreview: false,
     });
-    sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }: any) => {
+    sock = currentSocket;
+    currentSocket.ev.on('creds.update', async () => {
+      await saveCreds();
+      scheduleSessionPersist(userId, revision);
+    });
+    currentSocket.ev.on('connection.update', async ({ connection, lastDisconnect, qr }: any) => {
+      if (sock !== currentSocket) return;
       if (qr) {
         const qrCode = await QRCode.toDataURL(qr);
         await updateConnection(userId, { status: 'qr', qrCode, lastError: null });
       }
       if (connection === 'open') {
-        const phoneNumber = sock?.user?.id?.split(':')[0] || null;
+        await persistSession(userId, revision);
+        const phoneNumber = currentSocket.user?.id?.split(':')[0] || null;
         await updateConnection(userId, { status: 'connected', qrCode: null, phoneNumber, lastError: null });
       }
       if (connection === 'close') {
@@ -99,7 +168,8 @@ async function startSocket(requestedUserId?: string) {
         if (reconnect) setTimeout(() => startSocket().catch(console.error), 3000);
       }
     });
-    sock.ev.on('messages.upsert', async ({ type, messages: incoming }: any) => {
+    currentSocket.ev.on('messages.upsert', async ({ type, messages: incoming }: any) => {
+      if (sock !== currentSocket) return;
       if (type !== 'notify') return;
       for (const msg of incoming) {
         if (msg.key.fromMe || !msg.key.remoteJid || isJidBroadcast(msg.key.remoteJid)) continue;
@@ -115,7 +185,7 @@ async function startSocket(requestedUserId?: string) {
           const contactName = String(msg.pushName || '').trim() || undefined;
           let avatarUrl: string | undefined;
           try {
-            avatarUrl = await sock?.profilePictureUrl(phoneJid || jid, 'preview');
+            avatarUrl = await currentSocket.profilePictureUrl(phoneJid || jid, 'preview');
           } catch {
             // Foto ausente ou protegida pelas configurações de privacidade do contato.
           }
@@ -136,11 +206,11 @@ async function startSocket(requestedUserId?: string) {
           });
           if (reply) {
             try {
-              await sock?.readMessages([msg.key]);
+              await currentSocket.readMessages([msg.key]);
             } catch (error) {
               logger.warn({ err: error, messageId: msg.key.id }, 'falha ao confirmar leitura');
             }
-            await sock?.sendMessage(jid, { text: reply });
+            await currentSocket.sendMessage(jid, { text: reply });
           }
         } catch (error) {
           logger.error({ err: error, messageId: msg.key.id }, 'falha ao processar mensagem recebida');
@@ -165,12 +235,18 @@ app.post('/disconnect', authorize, async (req, res) => {
   try {
     const userId = await resolveOwnerUserId();
     if (req.body.userId !== userId) return res.status(403).json({ error: 'Usuário inválido' });
-    if (sock) await sock.logout();
-    sock = null;
-    await fs.rm(sessionRoot, { recursive: true, force: true });
-    await updateConnection(userId, { status: 'disconnected', qrCode: null, phoneNumber: null, lastError: null });
+    await resetSession(userId, true);
     res.json({ success: true });
   } catch (error) { res.status(500).json({ error: error instanceof Error ? error.message : 'Falha ao desconectar' }); }
+});
+app.post('/refresh-qr', authorize, async (req, res) => {
+  try {
+    const userId = await resolveOwnerUserId();
+    if (req.body.userId !== userId) return res.status(403).json({ error: 'Usuário inválido' });
+    await resetSession(userId, false);
+    await startSocket(userId);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error instanceof Error ? error.message : 'Falha ao gerar novo QR Code' }); }
 });
 app.post('/send', authorize, async (req, res) => {
   try {

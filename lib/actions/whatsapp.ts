@@ -47,6 +47,13 @@ export async function disconnectWhatsApp() {
   return { success: true };
 }
 
+export async function refreshWhatsAppQr() {
+  const dbUser = await getDbUser();
+  await callWorker('/refresh-qr', { userId: dbUser.id });
+  revalidatePath('/dashboard/whatsapp');
+  return { success: true };
+}
+
 export async function sendManualMessage(leadId: string, content: string) {
   const dbUser = await getDbUser();
   const lead = await db.query.leads.findFirst({ where: and(eq(leads.id, leadId), eq(leads.userId, dbUser.id)) });

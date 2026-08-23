@@ -5,13 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Smartphone, RefreshCcw, LogOut, CheckCircle2 } from 'lucide-react';
-import { connectWhatsApp, getConnectionStatus, disconnectWhatsApp } from '@/lib/actions/whatsapp';
+import { connectWhatsApp, getConnectionStatus, disconnectWhatsApp, refreshWhatsAppQr } from '@/lib/actions/whatsapp';
 import Image from 'next/image';
 
 export function WhatsAppManager() {
     const [status, setStatus] = useState<'disconnected' | 'qr' | 'connected' | 'loading'>('loading');
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [error, setError] = useState('');
+    const [isRefreshingQr, setIsRefreshingQr] = useState(false);
     const handleConnect = async () => {
         setStatus('loading');
         try {
@@ -50,6 +51,19 @@ export function WhatsAppManager() {
         setStatus('loading');
         await disconnectWhatsApp();
         await fetchStatus();
+    };
+
+    const handleRefreshQr = async () => {
+        setIsRefreshingQr(true);
+        setError('');
+        try {
+            await refreshWhatsAppQr();
+            await fetchStatus();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Falha ao gerar novo QR Code');
+        } finally {
+            setIsRefreshingQr(false);
+        }
     };
 
     return (
@@ -119,6 +133,12 @@ export function WhatsAppManager() {
                             <p className="text-sm font-medium animate-pulse text-green-600">
                                 Abra o WhatsApp {'>'} Aparelhos Conectados {'>'} Conectar um aparelho
                             </p>
+                            <Button variant="outline" className="mt-5" onClick={handleRefreshQr} disabled={isRefreshingQr}>
+                                <RefreshCcw className={`mr-2 h-4 w-4 ${isRefreshingQr ? 'animate-spin' : ''}`} />
+                                {isRefreshingQr ? 'Gerando novo código...' : 'Gerar novo QR Code'}
+                            </Button>
+                            <p className="mt-2 text-xs text-muted-foreground">Use somente se o código atual expirar ou for recusado.</p>
+                            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
                         </div>
                     )}
 
