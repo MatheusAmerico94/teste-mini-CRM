@@ -8,6 +8,23 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Image from 'next/image';
+
+function displayPhone(phone?: string | null) {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (digits.length === 13 && digits.startsWith('55')) return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+    if (digits.length === 12 && digits.startsWith('55')) return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 8)}-${digits.slice(8)}`;
+    return digits ? `+${digits}` : 'Número não disponível';
+}
+
+function LeadAvatar({ lead, size = 'large' }: { lead: any; size?: 'large' | 'small' }) {
+    const dimensions = size === 'large' ? 'w-12 h-12' : 'w-10 h-10';
+    return (
+        <div className={`${dimensions} rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0`}>
+            {lead.avatarUrl ? <Image src={lead.avatarUrl} alt="" width={48} height={48} unoptimized className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <UserCircle2 className={size === 'large' ? 'w-8 h-8 text-slate-400' : 'w-6 h-6 text-slate-400'} />}
+        </div>
+    );
+}
 
 export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { initialLeads: any[], initialSelectedLeadId?: string }) {
     const [leads, setLeads] = useState<any[]>(initialLeads);
@@ -156,16 +173,14 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
                                 >
                                     {/* Avatar */}
                                     <div className="relative">
-                                        <div className="w-12 h-12 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0">
-                                            <UserCircle2 className="w-8 h-8 text-slate-400" />
-                                        </div>
+                                        <LeadAvatar lead={lead} />
                                         <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-slate-950 ${getTemperatureColor(lead.temperature)}`} />
                                     </div>
 
                                     {/* Content */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex justify-between items-baseline mb-1">
-                                            <h3 className="font-medium text-slate-900 dark:text-slate-100 truncate">{lead.name || lead.phone}</h3>
+                                            <h3 className="font-medium text-slate-900 dark:text-slate-100 truncate">{lead.name && lead.name !== lead.phone ? lead.name : displayPhone(lead.phone)}</h3>
                                             <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
                                                 {new Date(lead.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                                             </span>
@@ -198,12 +213,10 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
                                     <ArrowLeft className="w-5 h-5" />
                                 </Button>
 
-                                <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
-                                    <UserCircle2 className="w-6 h-6 text-slate-400" />
-                                </div>
+                                <LeadAvatar lead={selectedLead} size="small" />
                                 <div>
-                                    <h3 className="font-medium text-slate-900 dark:text-slate-100">{selectedLead.name}</h3>
-                                    <p className="text-xs text-muted-foreground">{selectedLead.phone}</p>
+                                    <h3 className="font-medium text-slate-900 dark:text-slate-100">{selectedLead.name && selectedLead.name !== selectedLead.phone ? selectedLead.name : displayPhone(selectedLead.phone)}</h3>
+                                    <p className="text-xs text-muted-foreground">{displayPhone(selectedLead.phone)}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">

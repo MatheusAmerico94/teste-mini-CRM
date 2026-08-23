@@ -17,6 +17,7 @@ export const leads = pgTable('leads', {
     name: text('name').notNull(),
     email: text('email'),
     phone: text('phone'),
+    avatarUrl: text('avatar_url'),
     company: text('company'),
 
     estimatedValue: doublePrecision('estimated_value').default(0),

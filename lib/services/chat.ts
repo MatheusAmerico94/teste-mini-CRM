@@ -1,11 +1,12 @@
 import { db } from '../db';
 import { activities, agents, businessSettings, leads, messages, portfolioItems, servicePackages } from '../db/schema';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, or } from 'drizzle-orm';
 import OpenAI from 'openai/index.js';
 import { randomUUID } from 'crypto';
 import { decryptSecret } from '../security/crypto';
 
 type MediaData = { type: 'image'; base64: string } | undefined;
+type ContactData = { name?: string; avatarUrl?: string; legacyNumber?: string };
 type AgentResult = {
   reply: string;
   temperature: 'frio' | 'morno' | 'quente';
@@ -23,6 +24,7 @@ export async function processIncomingMessage(
   messageBody: string,
   mediaData?: MediaData,
   externalId?: string,
+  contactData: ContactData = {},
 ) {
   if (externalId) {
     const duplicate = await db.query.messages.findFirst({ where: eq(messages.externalId, externalId) });
@@ -30,15 +32,33 @@ export async function processIncomingMessage(
   }
 
   let lead = await db.query.leads.findFirst({
-    where: and(eq(leads.userId, userId), eq(leads.phone, contactNumber)),
+    where: and(
+      eq(leads.userId, userId),
+      contactData.legacyNumber
+        ? or(eq(leads.phone, contactNumber), eq(leads.phone, contactData.legacyNumber))
+        : eq(leads.phone, contactNumber),
+    ),
   });
   if (!lead) {
     const id = randomUUID();
     await db.insert(leads).values({
-      id, userId, name: contactNumber, phone: contactNumber,
+      id, userId, name: contactData.name || contactNumber, phone: contactNumber,
+      avatarUrl: contactData.avatarUrl || null,
       status: 'atendimento', temperature: 'frio', aiEnabled: true, source: 'whatsapp',
     });
     lead = await db.query.leads.findFirst({ where: eq(leads.id, id) });
+  } else {
+    const currentNameIsIdentifier = lead.name === lead.phone || lead.name === contactData.legacyNumber;
+    const nextName = contactData.name && currentNameIsIdentifier ? contactData.name : lead.name;
+    if (lead.phone !== contactNumber || nextName !== lead.name || (contactData.avatarUrl && contactData.avatarUrl !== lead.avatarUrl)) {
+      await db.update(leads).set({
+        phone: contactNumber,
+        name: nextName,
+        avatarUrl: contactData.avatarUrl || lead.avatarUrl,
+        updatedAt: new Date(),
+      }).where(and(eq(leads.id, lead.id), eq(leads.userId, userId)));
+      lead = { ...lead, phone: contactNumber, name: nextName, avatarUrl: contactData.avatarUrl || lead.avatarUrl };
+    }
   }
   if (!lead) throw new Error('Não foi possível criar o lead');
 

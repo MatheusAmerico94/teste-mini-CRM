@@ -105,7 +105,20 @@ async function startSocket(requestedUserId?: string) {
         if (msg.key.fromMe || !msg.key.remoteJid || isJidBroadcast(msg.key.remoteJid)) continue;
         try {
           const jid = msg.key.remoteJid;
-          const phone = jid.split('@')[0];
+          const phoneJid = msg.key.senderPn || msg.key.participantPn || (jid.endsWith('@s.whatsapp.net') ? jid : null);
+          const phone = phoneJid?.split('@')[0];
+          if (!phone) {
+            logger.warn({ jid, messageId: msg.key.id }, 'mensagem sem número de telefone resolvido');
+            continue;
+          }
+          const legacyNumber = jid.endsWith('@lid') ? jid.split('@')[0] : undefined;
+          const contactName = String(msg.pushName || '').trim() || undefined;
+          let avatarUrl: string | undefined;
+          try {
+            avatarUrl = await sock?.profilePictureUrl(phoneJid || jid, 'preview');
+          } catch {
+            // Foto ausente ou protegida pelas configurações de privacidade do contato.
+          }
           const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '';
           let mediaData: { type: 'image'; base64: string } | undefined;
           if (msg.message?.imageMessage) {
@@ -113,7 +126,11 @@ async function startSocket(requestedUserId?: string) {
             mediaData = { type: 'image', base64: buffer.toString('base64') };
           }
           if (!text && !mediaData) continue;
-          const reply = await processIncomingMessage(userId, phone, text, mediaData, msg.key.id || undefined);
+          const reply = await processIncomingMessage(userId, phone, text, mediaData, msg.key.id || undefined, {
+            name: contactName,
+            avatarUrl,
+            legacyNumber,
+          });
           if (reply) await sock?.sendMessage(jid, { text: reply });
         } catch (error) {
           logger.error({ err: error, messageId: msg.key.id }, 'falha ao processar mensagem recebida');
