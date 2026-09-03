@@ -7,9 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createAgent, updateAgent, deleteAgent, AgentInput } from '@/lib/actions/agents';
 import { useForm } from 'react-hook-form';
-import { Bot, Plus, Save, Trash2, BrainCircuit, KeyRound } from 'lucide-react';
+import { Bot, Plus, Save, Trash2, BrainCircuit, KeyRound, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 
@@ -31,6 +32,8 @@ export function AgentsManager({ initialAgents }: Props) {
     const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
     const [isCreating, setIsCreating] = useState(false);
     const [saveError, setSaveError] = useState('');
+    const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
+    const [isToggling, setIsToggling] = useState<string | null>(null);
 
     const form = useForm<AgentInput>();
     const personalityLength = form.watch('personality')?.length || 0;
@@ -84,10 +87,41 @@ export function AgentsManager({ initialAgents }: Props) {
         });
     };
 
-    const handleDelete = async (id: string) => {
-        if (confirm('Tem certeza que deseja remover este agente?')) {
-            await deleteAgent(id);
-            setAgents(agents.filter(a => a.id !== id));
+    const handleDelete = async () => {
+        if (!agentToDelete) return;
+        try {
+            await deleteAgent(agentToDelete.id);
+            setAgents((current) => current.filter((agent) => agent.id !== agentToDelete.id));
+            setAgentToDelete(null);
+        } catch (error) {
+            console.error(error);
+            setSaveError('Não foi possível excluir o agente. Tente novamente.');
+        }
+    };
+
+    const toggleAgent = async (agent: Agent, isActive: boolean) => {
+        setSaveError('');
+        setIsToggling(agent.id);
+        try {
+            await updateAgent(agent.id, {
+                name: agent.name,
+                personality: agent.personality,
+                provider: 'openai',
+                model: agent.model || 'gpt-4o-mini',
+                apiKey: '',
+                isActive,
+                role: agent.role === 'router' ? 'router' : 'specialist',
+                serviceKey: agent.serviceKey === 'photos' || agent.serviceKey === 'sites' ? agent.serviceKey : 'general',
+            });
+            setAgents((current) => current.map((item) => {
+                if (item.id === agent.id) return { ...item, isActive };
+                return isActive && agent.role === 'router' && item.role === 'router' ? { ...item, isActive: false } : item;
+            }));
+        } catch (error) {
+            console.error(error);
+            setSaveError('Não foi possível alterar o status do agente.');
+        } finally {
+            setIsToggling(null);
         }
     };
 
@@ -245,11 +279,15 @@ export function AgentsManager({ initialAgents }: Props) {
                                         <Bot className="h-5 w-5" />
                                     </div>
                                 </div>
-                                <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEdit(agent)}>
-                                        <Save className="h-4 w-4" /> {/* Should be an edit icon ideally, using save for simplicity here if no edit is imported */}
+                                <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-2 rounded-md border px-2 py-1">
+                                        <Switch checked={Boolean(agent.isActive)} disabled={isToggling === agent.id} onCheckedChange={(checked) => toggleAgent(agent, checked)} aria-label={`Ativar ou desativar ${agent.name}`} />
+                                        <span className="text-xs text-muted-foreground">{agent.isActive ? 'Ligado' : 'Desligado'}</span>
+                                    </div>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEdit(agent)} aria-label={`Editar ${agent.name}`}>
+                                        <Pencil className="h-4 w-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-500" onClick={() => handleDelete(agent.id)}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-500" onClick={() => setAgentToDelete(agent)} aria-label={`Excluir ${agent.name}`}>
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </div>
@@ -278,6 +316,18 @@ export function AgentsManager({ initialAgents }: Props) {
                     </Card>
                 ))}
             </div>
+            <Dialog open={Boolean(agentToDelete)} onOpenChange={(open) => !open && setAgentToDelete(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Excluir agente?</DialogTitle>
+                        <DialogDescription>Você tem certeza que deseja excluir {agentToDelete?.name || 'este agente'}? Esta ação não pode ser desfeita.</DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setAgentToDelete(null)}>Cancelar</Button>
+                        <Button variant="destructive" onClick={handleDelete}>Sim, excluir</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
