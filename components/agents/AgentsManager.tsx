@@ -238,15 +238,6 @@ export function AgentsManager({ initialAgents }: Props) {
                                 </div>
                             </div>
 
-                            <div className="flex items-center space-x-2 pt-4">
-                                <Switch
-                                    id="isActive"
-                                    checked={form.watch('isActive') as boolean}
-                                    onCheckedChange={(checked: boolean) => form.setValue('isActive', checked)}
-                                />
-                                <Label htmlFor="isActive">Agente ativo</Label>
-                            </div>
-
                         </CardContent>
                         <CardFooter className="flex justify-end gap-2 bg-muted/50 py-4 mt-4">
                             {saveError && <p role="alert" className="mr-auto text-sm text-red-600">{saveError}</p>}
@@ -280,10 +271,6 @@ export function AgentsManager({ initialAgents }: Props) {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    <div className="flex items-center gap-2 rounded-md border px-2 py-1">
-                                        <Switch checked={Boolean(agent.isActive)} disabled={isToggling === agent.id} onCheckedChange={(checked) => toggleAgent(agent, checked)} aria-label={`Ativar ou desativar ${agent.name}`} />
-                                        <span className="text-xs text-muted-foreground">{agent.isActive ? 'Ligado' : 'Desligado'}</span>
-                                    </div>
                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEdit(agent)} aria-label={`Editar ${agent.name}`}>
                                         <Pencil className="h-4 w-4" />
                                     </Button>
@@ -293,6 +280,13 @@ export function AgentsManager({ initialAgents }: Props) {
                                 </div>
                             </div>
                             <CardTitle className="text-xl mt-4">{agent.name}</CardTitle>
+                            <div className="mt-3 flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="text-sm font-medium">Atendimento automático</span>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-xs ${agent.isActive ? 'text-green-700' : 'text-muted-foreground'}`}>{agent.isActive ? 'Ligado' : 'Desligado'}</span>
+                                    <Switch checked={Boolean(agent.isActive)} disabled={isToggling === agent.id} onCheckedChange={(checked) => toggleAgent(agent, checked)} aria-label={`Ativar ou desativar ${agent.name}`} />
+                                </div>
+                            </div>
                             <CardDescription className="flex items-center gap-2 mt-1">
                                 <Badge variant="outline" className="font-mono text-xs">{agent.provider}</Badge>
                                 <Badge variant="secondary" className="text-xs">{agent.role === 'router' ? 'Cérebro' : agent.serviceKey === 'photos' ? 'Fotos' : agent.serviceKey === 'sites' ? 'Sites' : 'Geral'}</Badge>
