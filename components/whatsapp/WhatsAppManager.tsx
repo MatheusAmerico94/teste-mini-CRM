@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Smartphone, RefreshCcw, LogOut, CheckCircle2 } from 'lucide-react';
-import { connectWhatsApp, getConnectionStatus, disconnectWhatsApp, refreshWhatsAppQr } from '@/lib/actions/whatsapp';
+import { getConnectionStatus, disconnectWhatsApp, refreshWhatsAppQr } from '@/lib/actions/whatsapp';
 import Image from 'next/image';
 
 export function WhatsAppManager() {
@@ -17,8 +17,10 @@ export function WhatsAppManager() {
         setStatus('loading');
         try {
             setError('');
-            await connectWhatsApp();
-        } catch (e) { setError(e instanceof Error ? e.message : 'Falha ao iniciar conexão'); }
+            // Uma sessão expirada pode impedir o Baileys de emitir outro QR. Reiniciar
+            // a sessão garante que o próximo vínculo sempre receba um código novo.
+            await refreshWhatsAppQr();
+        } catch (e) { setError(e instanceof Error ? e.message : 'Falha ao gerar QR Code'); }
         await fetchStatus();
     };
 
@@ -110,7 +112,7 @@ export function WhatsAppManager() {
                                 O QR Code será gerado assim que o servidor iniciar o cliente do WhatsApp. Atualize a página ou aguarde.
                             </p>
                             <Button onClick={handleConnect} size="lg" className="bg-primary hover:bg-primary/90">
-                                <RefreshCcw className="mr-2 h-4 w-4" /> Tentar Conectar
+                                <RefreshCcw className="mr-2 h-4 w-4" /> Gerar novo QR Code
                             </Button>
                             {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
                         </div>
