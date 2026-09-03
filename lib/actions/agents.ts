@@ -16,10 +16,28 @@ export type AgentInput = {
   model?: string;
   apiKey?: string;
   isActive?: boolean;
+  role?: 'router' | 'specialist';
+  serviceKey?: 'general' | 'photos' | 'sites';
 };
+
+const DEFAULT_ROUTER_PROMPT = 'Você é o Cérebro do atendimento. Descubra com uma pergunta curta se a pessoa procura ensaio fotográfico com IA, criação de site ou outro serviço. Quando souber, encaminhe internamente sem explicar a troca.';
+const DEFAULT_SITES_PROMPT = 'Você é um consultor de sites para pequenas empresas. Entenda o negócio, o objetivo e a necessidade digital. Seja claro, útil e consultivo; não invente preços, prazos ou condições que não estejam configurados.';
+
+export async function ensureDefaultAgentsForUser(userId: string) {
+  const current = await db.select().from(agents).where(eq(agents.userId, userId));
+  const additions: Array<typeof agents.$inferInsert> = [];
+  if (!current.some((agent) => agent.role === 'router')) {
+    additions.push({ id: randomUUID(), userId, name: 'Cérebro', personality: DEFAULT_ROUTER_PROMPT, provider: 'openai', model: 'gpt-4o-mini', isActive: true, role: 'router', serviceKey: 'general' });
+  }
+  if (!current.some((agent) => agent.role === 'specialist' && agent.serviceKey === 'sites')) {
+    additions.push({ id: randomUUID(), userId, name: 'Sites', personality: DEFAULT_SITES_PROMPT, provider: 'openai', model: 'gpt-4o-mini', isActive: true, role: 'specialist', serviceKey: 'sites' });
+  }
+  if (additions.length) await db.insert(agents).values(additions);
+}
 
 export async function getAgents() {
   const dbUser = await getDbUser();
+  await ensureDefaultAgentsForUser(dbUser.id);
   const rows = await db.select().from(agents)
     .where(eq(agents.userId, dbUser.id))
     .orderBy(desc(agents.createdAt));
@@ -31,9 +49,9 @@ export async function createAgent(input: AgentInput) {
   const data = agentSchema.parse(input);
   const agentId = randomUUID();
   await db.transaction(async (tx) => {
-    if (data.isActive) {
+    if (data.isActive && data.role === 'router') {
       await tx.update(agents).set({ isActive: false, updatedAt: new Date() })
-        .where(eq(agents.userId, dbUser.id));
+        .where(and(eq(agents.userId, dbUser.id), eq(agents.role, 'router')));
     }
     await tx.insert(agents).values({
       id: agentId,
@@ -57,9 +75,9 @@ export async function updateAgent(agentId: string, input: AgentInput) {
     ? encryptSecret(data.apiKey)
     : existing.apiKey;
   await db.transaction(async (tx) => {
-    if (data.isActive) {
+    if (data.isActive && data.role === 'router') {
       await tx.update(agents).set({ isActive: false, updatedAt: new Date() })
-        .where(and(eq(agents.userId, dbUser.id), ne(agents.id, agentId)));
+        .where(and(eq(agents.userId, dbUser.id), eq(agents.role, 'router'), ne(agents.id, agentId)));
     }
     await tx.update(agents)
       .set({ ...data, apiKey, updatedAt: new Date() })

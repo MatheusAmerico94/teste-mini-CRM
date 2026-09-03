@@ -2,7 +2,7 @@ import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { LayoutDashboard, Users, Settings, Zap, Menu, Bot, Smartphone, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, Zap, Menu, Bot, Smartphone, MessageSquare, Target } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ModeToggle } from "@/components/ModeToggle";
@@ -43,6 +43,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
                     <Link href="/dashboard/leads">
                         <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground hover:text-foreground">
                             <Users className="mr-3 h-5 w-5" /> Leads
+                        </Button>
+                    </Link>
+                    <Link href="/dashboard/prospeccao">
+                        <Button variant="ghost" className="w-full justify-start font-medium text-muted-foreground hover:text-foreground">
+                            <Target className="mr-3 h-5 w-5" /> Prospecção
                         </Button>
                     </Link>
                     <Link href="/dashboard/configuracoes">
@@ -89,6 +94,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
                                         </Link>
                                         <Link href="/dashboard/leads" className="w-full">
                                             <Button variant="ghost" className="w-full justify-start"><Users className="mr-2" /> Leads</Button>
+                                        </Link>
+                                        <Link href="/dashboard/prospeccao" className="w-full">
+                                            <Button variant="ghost" className="w-full justify-start"><Target className="mr-2" /> Prospecção</Button>
                                         </Link>
                                         <Link href="/dashboard/configuracoes" className="w-full">
                                             <Button variant="ghost" className="w-full justify-start"><Settings className="mr-2" /> Configurações</Button>

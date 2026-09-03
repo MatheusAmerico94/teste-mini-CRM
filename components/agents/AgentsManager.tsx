@@ -13,7 +13,7 @@ import { Bot, Plus, Save, Trash2, BrainCircuit, KeyRound } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 
-type Agent = { id: string; name: string; personality: string; provider: string; model?: string | null; apiKey?: string; isActive?: boolean | null; userId?: string; createdAt?: Date; updatedAt?: Date; hasApiKey?: boolean };
+type Agent = { id: string; name: string; personality: string; provider: string; model?: string | null; apiKey?: string; isActive?: boolean | null; role?: string; serviceKey?: string; userId?: string; createdAt?: Date; updatedAt?: Date; hasApiKey?: boolean };
 
 const OPENAI_MODELS = [
     { value: 'gpt-4o-mini', label: 'GPT-4o mini', description: 'Mais econômico para testes' },
@@ -31,34 +31,9 @@ export function AgentsManager({ initialAgents }: Props) {
     const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
     const [isCreating, setIsCreating] = useState(false);
     const [saveError, setSaveError] = useState('');
-    const [isSelectingAgent, setIsSelectingAgent] = useState(false);
 
     const form = useForm<AgentInput>();
     const personalityLength = form.watch('personality')?.length || 0;
-    const activeAgentId = agents.find((agent) => agent.isActive)?.id || '';
-
-    const selectActiveAgent = async (agentId: string) => {
-        const agent = agents.find((item) => item.id === agentId);
-        if (!agent) return;
-        setSaveError('');
-        setIsSelectingAgent(true);
-        try {
-            await updateAgent(agent.id, {
-                name: agent.name,
-                personality: agent.personality,
-                provider: 'openai',
-                model: agent.model || 'gpt-4o-mini',
-                apiKey: agent.apiKey || '',
-                isActive: true,
-            });
-            setAgents((current) => current.map((item) => ({ ...item, isActive: item.id === agentId })));
-        } catch (error) {
-            console.error(error);
-            setSaveError('Não foi possível trocar o agente ativo. Tente novamente.');
-        } finally {
-            setIsSelectingAgent(false);
-        }
-    };
 
     const onSubmit = async (data: AgentInput) => {
         try {
@@ -72,7 +47,7 @@ export function AgentsManager({ initialAgents }: Props) {
                         hasApiKey: agent.hasApiKey || Boolean(data.apiKey),
                         apiKey: data.apiKey ? '••••••••••••' : agent.apiKey,
                     };
-                    return data.isActive ? { ...agent, isActive: false } : agent;
+                    return data.isActive && data.role === 'router' && agent.role === 'router' ? { ...agent, isActive: false } : agent;
                 }));
                 setEditingAgent(null);
             } else {
@@ -81,7 +56,7 @@ export function AgentsManager({ initialAgents }: Props) {
                     // Optimistic update, ignoring id/timestamps for simply rendering the list
                     setAgents((current) => [
                         { id: res.agentId, ...data, provider: 'openai', apiKey: data.apiKey ? '••••••••••••' : '', hasApiKey: Boolean(data.apiKey) },
-                        ...current.map((agent) => data.isActive ? { ...agent, isActive: false } : agent),
+                        ...current.map((agent) => data.isActive && data.role === 'router' && agent.role === 'router' ? { ...agent, isActive: false } : agent),
                     ]);
                     setIsCreating(false);
                 }
@@ -104,6 +79,8 @@ export function AgentsManager({ initialAgents }: Props) {
             model: agent.model || 'gpt-4o-mini',
             apiKey: '',
             isActive: Boolean(agent.isActive),
+            role: agent.role === 'router' ? 'router' : 'specialist',
+            serviceKey: agent.serviceKey === 'photos' || agent.serviceKey === 'sites' ? agent.serviceKey : 'general',
         });
     };
 
@@ -130,30 +107,13 @@ export function AgentsManager({ initialAgents }: Props) {
                     <p className="text-muted-foreground">Gerencie os assistentes que interagem com seus leads.</p>
                 </div>
                 {!isCreating && !editingAgent && (
-                    <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', isActive: true }); }} className="bg-primary hover:bg-primary/90 text-white">
+                    <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', isActive: true, role: 'specialist', serviceKey: 'general' }); }} className="bg-primary hover:bg-primary/90 text-white">
                         <Plus className="mr-2 h-4 w-4" /> Novo Agente
                     </Button>
                 )}
             </div>
 
-            {agents.length > 0 && (
-                <Card className="border-primary/20">
-                    <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <p className="font-medium">Agente que responde no WhatsApp</p>
-                            <p className="text-sm text-muted-foreground">Somente o agente selecionado abaixo responderá aos leads.</p>
-                        </div>
-                        <Select value={activeAgentId} onValueChange={selectActiveAgent} disabled={isSelectingAgent}>
-                            <SelectTrigger className="w-full md:w-[280px]">
-                                <SelectValue placeholder="Selecione um agente" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {agents.map((agent) => <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                    </CardContent>
-                </Card>
-            )}
+            {agents.length > 0 && <Card className="border-primary/20"><CardContent className="p-4"><p className="font-medium">Fluxo de atendimento</p><p className="text-sm text-muted-foreground">O Cérebro identifica a necessidade e encaminha internamente para o especialista ativo de Fotos ou Sites.</p></CardContent></Card>}
 
             {(isCreating || editingAgent) && (
                 <Card className="border-primary/20 shadow-primary/5 animate-in fade-in slide-in-from-top-4">
@@ -184,6 +144,20 @@ export function AgentsManager({ initialAgents }: Props) {
                                     </Select>
                                 </div>
 
+                                <div className="space-y-2">
+                                    <Label>Função no atendimento</Label>
+                                    <Select value={form.watch('role') || 'specialist'} onValueChange={(value: 'router' | 'specialist') => form.setValue('role', value, { shouldDirty: true })}>
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent><SelectItem value="router">Cérebro (identifica o serviço)</SelectItem><SelectItem value="specialist">Especialista</SelectItem></SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Área atendida</Label>
+                                    <Select value={form.watch('serviceKey') || 'general'} onValueChange={(value: 'general' | 'photos' | 'sites') => form.setValue('serviceKey', value, { shouldDirty: true })}>
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent><SelectItem value="general">Geral</SelectItem><SelectItem value="photos">Ensaios com IA</SelectItem><SelectItem value="sites">Sites para empresas</SelectItem></SelectContent>
+                                    </Select>
+                                </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="model">Modelo da OpenAI</Label>
                                     <Select value={form.watch('model') || 'gpt-4o-mini'} onValueChange={(value) => form.setValue('model', value, { shouldDirty: true })}>
@@ -236,7 +210,7 @@ export function AgentsManager({ initialAgents }: Props) {
                                     checked={form.watch('isActive') as boolean}
                                     onCheckedChange={(checked: boolean) => form.setValue('isActive', checked)}
                                 />
-                                <Label htmlFor="isActive">Agente Ativo (responderá mensagens no WhatsApp)</Label>
+                                <Label htmlFor="isActive">Agente ativo</Label>
                             </div>
 
                         </CardContent>
@@ -259,7 +233,7 @@ export function AgentsManager({ initialAgents }: Props) {
                         </div>
                         <h3 className="text-lg font-medium">Nenhum agente configurado</h3>
                         <p className="text-sm text-muted-foreground mt-1 mb-4">Crie seu primeiro agente de IA para automatizar seu WhatsApp.</p>
-                        <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', isActive: true }); }} variant="outline">Criar Agente</Button>
+                        <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', isActive: true, role: 'specialist', serviceKey: 'general' }); }} variant="outline">Criar Agente</Button>
                     </div>
                 )}
                 {agents.map((agent) => (
@@ -283,6 +257,7 @@ export function AgentsManager({ initialAgents }: Props) {
                             <CardTitle className="text-xl mt-4">{agent.name}</CardTitle>
                             <CardDescription className="flex items-center gap-2 mt-1">
                                 <Badge variant="outline" className="font-mono text-xs">{agent.provider}</Badge>
+                                <Badge variant="secondary" className="text-xs">{agent.role === 'router' ? 'Cérebro' : agent.serviceKey === 'photos' ? 'Fotos' : agent.serviceKey === 'sites' ? 'Sites' : 'Geral'}</Badge>
                                 {agent.isActive ? (
                                     <span className="flex items-center text-xs text-green-500"><span className="w-2 h-2 rounded-full bg-green-500 mr-1"></span>Ativo</span>
                                 ) : (

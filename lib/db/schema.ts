@@ -32,6 +32,8 @@ export const leads = pgTable('leads', {
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     persistentMemory: text('persistent_memory'), // JSON string with user facts
+    serviceKey: text('service_key').notNull().default('general'), // general, photos, sites
+    assignedAgentId: text('assigned_agent_id'),
     deletedAt: timestamp('deleted_at'),
 });
 
@@ -56,9 +58,33 @@ export const agents = pgTable('agents', {
     model: text('model'),
     apiKey: text('api_key'),
     isActive: boolean('is_active').default(true),
+    role: text('role').notNull().default('specialist'), // router or specialist
+    serviceKey: text('service_key').notNull().default('general'), // general, photos, sites
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+export const prospects = pgTable('prospects', {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    leadId: text('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+    businessName: text('business_name').notNull(),
+    contactName: text('contact_name'),
+    phone: text('phone').notNull(),
+    city: text('city'),
+    niche: text('niche'),
+    websiteUrl: text('website_url'),
+    websiteStatus: text('website_status').notNull().default('unknown'),
+    websiteNotes: text('website_notes'),
+    personalizedMessage: text('personalized_message').notNull(),
+    status: text('status').notNull().default('draft'),
+    contactApproved: boolean('contact_approved').notNull().default(false),
+    lastContactedAt: timestamp('last_contacted_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+    userPhoneUnique: uniqueIndex('prospects_user_phone_unique').on(table.userId, table.phone),
+}));
 
 export const whatsappConnections = pgTable('whatsapp_connections', {
     id: text('id').primaryKey(),
