@@ -16,6 +16,32 @@ function safeMemory(value: string | null) { try { return value ? JSON.parse(valu
 function nowInBrazil() { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', timeStyle: 'short' }).format(new Date()); }
 function findApiKey(list: Array<typeof agents.$inferSelect>) { return list.map((agent) => decryptSecret(agent.apiKey)).find(Boolean) || process.env.OPENAI_API_KEY; }
 
+function isIndecisiveReply(value: string) {
+  return /^(n[ãa]o sei|sei l[áa]|n[ãa]o tenho certeza|talvez|qualquer coisa)[!.?,\s]*$/i.test(value.trim());
+}
+
+function routerReply(body: string, memory: Record<string, unknown>, suggestedReply: string) {
+  if (!isIndecisiveReply(body)) return { reply: suggestedReply, routerStep: Number(memory.routerStep || 0) };
+
+  const routerStep = Number(memory.routerStep || 0);
+  if (routerStep === 0) {
+    return {
+      reply: 'Sem problema 😊 Posso te ajudar de duas formas: criar um ensaio fotográfico com IA para uma ocasião especial, ou criar/melhorar o site de uma empresa. Qual dessas opções parece mais útil para você?',
+      routerStep: 1,
+    };
+  }
+  if (routerStep === 1) {
+    return {
+      reply: 'Para facilitar: responda *FOTOS* se quiser um ensaio com IA ou *SITE* se quiser falar da presença online de uma empresa. Se for outro assunto, pode me dizer em uma frase o que você precisa.',
+      routerStep: 2,
+    };
+  }
+  return {
+    reply: 'Tudo bem. Me conta só qual resultado você gostaria de conseguir hoje — por exemplo, fotos para uma ocasião ou mais clientes para uma empresa — que eu encontro o melhor caminho para você.',
+    routerStep: 3,
+  };
+}
+
 function photosPrompt(agent: typeof agents.$inferSelect, lead: typeof leads.$inferSelect, settings: typeof businessSettings.$inferSelect | undefined, catalog: unknown, portfolio: unknown) {
   return `Você é ${agent.name}, atendente comercial de ensaios fotográficos com IA no WhatsApp. As regras abaixo têm prioridade sobre a personalidade.
 Personalidade: ${agent.personality}
@@ -46,7 +72,9 @@ Retorne somente JSON: {"reply":"texto", "temperature":"frio|morno|quente", "next
 }
 
 async function classify(client: OpenAI, router: typeof agents.$inferSelect, body: string, history: Array<typeof messages.$inferSelect>) {
-  const prompt = `Você é ${router.name}, o Cérebro do atendimento. Identifique se a pessoa procura ensaio fotográfico com IA (photos), criação/melhoria de site (sites) ou se ainda não está claro/é outro assunto (general). Personalidade: ${router.personality}. Se ainda não estiver claro, responda com uma pergunta curta sobre ensaio, site ou outro serviço. Se estiver claro, reply pode ser vazio porque o especialista responderá. Não explique o encaminhamento e não invente condições. Retorne somente JSON: {"reply":"texto", "intent":"general|photos|sites", "memoryUpdate":{}}.`;
+  const prompt = `Você é ${router.name}, o Cérebro do atendimento. Identifique se a pessoa procura ensaio fotográfico com IA (photos), criação/melhoria de site (sites) ou se ainda não está claro/é outro assunto (general). Personalidade: ${router.personality}.
+Se ainda não estiver claro, conduza com naturalidade, considerando toda a conversa: não repita a mesma pergunta nem liste os serviços de modo robótico. Uma saudação simples pede uma pergunta acolhedora. Se a pessoa disser "não sei", "talvez" ou demonstrar indecisão, ajude-a a escolher com exemplos simples de resultado, como fotos para uma ocasião ou mais presença online para uma empresa. Em uma segunda indecisão, peça uma resposta curta como "FOTOS", "SITE" ou uma frase sobre a necessidade. Nunca fique em loop.
+Se estiver claro, reply pode ser vazio porque o especialista responderá. Não explique o encaminhamento e não invente condições. Retorne somente JSON: {"reply":"texto", "intent":"general|photos|sites", "memoryUpdate":{}}.`;
   const previous = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
   const completion = await client.chat.completions.create({ model: router.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: 0.2, messages: [{ role: 'system', content: prompt }, ...previous, { role: 'user', content: body || '[Imagem recebida]' }] });
   const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}') as Partial<RouterResult>;
@@ -99,8 +127,10 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     if (!router) throw new Error('O agente Cérebro não está ativo');
     const routed = await classify(client, router, messageBody, history);
     if (!isSpecialistService(routed.intent)) {
-      const reply = routed.reply || 'Olá! Você procura um ensaio fotográfico com IA, a criação de um site ou outro serviço?';
-      await db.transaction(async (tx) => { await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply }); await tx.update(leads).set({ persistentMemory: JSON.stringify({ ...safeMemory(activeLead.persistentMemory), ...(routed.memoryUpdate || {}) }), updatedAt: new Date() }).where(eq(leads.id, activeLead.id)); });
+      const currentMemory = safeMemory(activeLead.persistentMemory);
+      const guided = routerReply(messageBody, currentMemory, routed.reply || 'Olá! Você procura um ensaio fotográfico com IA, a criação de um site ou outro serviço?');
+      const reply = guided.reply;
+      await db.transaction(async (tx) => { await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply }); await tx.update(leads).set({ persistentMemory: JSON.stringify({ ...currentMemory, ...(routed.memoryUpdate || {}), routerStep: guided.routerStep }), updatedAt: new Date() }).where(eq(leads.id, activeLead.id)); });
       return reply;
     }
     service = routed.intent;
