@@ -11,7 +11,6 @@ import { sendManualMessage } from './whatsapp';
 import { decryptSecret } from '@/lib/security/crypto';
 import OpenAI from 'openai';
 import mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
 
 function normalizePhone(value: string) { return value.replace(/\D/g, ''); }
 function refresh() { revalidatePath('/dashboard/prospeccao'); revalidatePath('/dashboard/conversas'); revalidatePath('/dashboard/leads'); }
@@ -24,6 +23,7 @@ async function extractTextFromFile(file: File) {
   const buffer = Buffer.from(await file.arrayBuffer());
   if (name.endsWith('.docx')) return (await mammoth.extractRawText({ buffer })).value;
   if (name.endsWith('.pdf')) {
+    const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: buffer });
     try { return (await parser.getText()).text; } finally { await parser.destroy(); }
   }
