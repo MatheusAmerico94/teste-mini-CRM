@@ -1,16 +1,54 @@
 'use server';
 
 import { db } from '@/lib/db';
-import { leads, prospects } from '@/lib/db/schema';
+import { agents, leads, prospects } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { and, desc, eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { prospectSchema } from '@/lib/validation';
 import { revalidatePath } from 'next/cache';
 import { sendManualMessage } from './whatsapp';
+import { decryptSecret } from '@/lib/security/crypto';
+import OpenAI from 'openai';
+import mammoth from 'mammoth';
+import { PDFParse } from 'pdf-parse';
 
 function normalizePhone(value: string) { return value.replace(/\D/g, ''); }
 function refresh() { revalidatePath('/dashboard/prospeccao'); revalidatePath('/dashboard/conversas'); revalidatePath('/dashboard/leads'); }
+
+type ExtractedProspect = { businessName: string; contactName?: string; phone: string; city?: string; niche?: string; websiteUrl?: string; websiteStatus: 'has_site' | 'no_site' | 'unknown'; websiteNotes?: string; personalizedMessage: string; contactApproved: false };
+
+async function extractTextFromFile(file: File) {
+  if (file.size === 0 || file.size > 8 * 1024 * 1024) throw new Error('Escolha um arquivo entre 1 KB e 8 MB');
+  const name = file.name.toLowerCase();
+  const buffer = Buffer.from(await file.arrayBuffer());
+  if (name.endsWith('.docx')) return (await mammoth.extractRawText({ buffer })).value;
+  if (name.endsWith('.pdf')) {
+    const parser = new PDFParse({ data: buffer });
+    try { return (await parser.getText()).text; } finally { await parser.destroy(); }
+  }
+  if (name.endsWith('.csv') || name.endsWith('.txt')) return buffer.toString('utf8');
+  throw new Error('Formato não suportado. Envie CSV, TXT, DOCX ou PDF.');
+}
+
+export async function extractProspectsFromFile(formData: FormData) {
+  const user = await getDbUser();
+  const file = formData.get('file');
+  if (!(file instanceof File)) throw new Error('Selecione um arquivo válido');
+  const text = (await extractTextFromFile(file)).trim();
+  if (!text) throw new Error('Não foi possível encontrar texto nesse arquivo');
+  const configuredAgents = await db.select().from(agents).where(eq(agents.userId, user.id));
+  const apiKey = configuredAgents.map((agent) => decryptSecret(agent.apiKey)).find(Boolean) || process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('Cadastre uma chave da OpenAI em Agentes IA para ler arquivos de texto, Word ou PDF');
+  const completion = await new OpenAI({ apiKey }).chat.completions.create({
+    model: 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: 0,
+    messages: [{ role: 'system', content: 'Extraia somente os contatos de prospecção presentes no documento. Cada contato precisa conter: businessName (nome da empresa ou dono), contactName quando houver, phone, websiteUrl quando houver, websiteStatus (has_site, no_site ou unknown), websiteNotes quando houver e personalizedMessage (mensagem individual que será enviada). Não invente nomes, telefones, sites ou mensagens. Ignore linhas incompletas sem empresa/dono, telefone ou mensagem. Responda apenas JSON: {"prospects":[...]}. O texto pode vir de CSV, bloco de notas, Word ou PDF.' }, { role: 'user', content: text.slice(0, 100000) }],
+  });
+  const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}') as { prospects?: unknown[] };
+  const rows = (parsed.prospects || []).map((row) => prospectSchema.safeParse(row)).filter((result) => result.success).map((result) => ({ ...result.data, contactApproved: false })) as ExtractedProspect[];
+  if (!rows.length) throw new Error('Não encontrei contatos completos. Confira se cada um tem empresa ou nome, telefone e mensagem personalizada.');
+  return { rows, count: rows.length, fileName: file.name };
+}
 
 export async function getProspects() {
   const user = await getDbUser();
