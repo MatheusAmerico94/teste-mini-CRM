@@ -8,6 +8,7 @@ import { revalidatePath } from 'next/cache';
 import { randomUUID } from 'crypto';
 import { agentSchema } from '@/lib/validation';
 import { encryptSecret, maskSecret } from '@/lib/security/crypto';
+import { ensureDefaultAgentsForUser } from '../services/default-agents';
 
 export type AgentInput = {
   name: string;
@@ -19,21 +20,6 @@ export type AgentInput = {
   role?: 'router' | 'specialist';
   serviceKey?: 'general' | 'photos' | 'sites';
 };
-
-const DEFAULT_ROUTER_PROMPT = 'Você é o Cérebro do atendimento. Descubra com uma pergunta curta se a pessoa procura ensaio fotográfico com IA, criação de site ou outro serviço. Quando souber, encaminhe internamente sem explicar a troca.';
-const DEFAULT_SITES_PROMPT = 'Você é um consultor de sites para pequenas empresas. Entenda o negócio, o objetivo e a necessidade digital. Seja claro, útil e consultivo; não invente preços, prazos ou condições que não estejam configurados.';
-
-export async function ensureDefaultAgentsForUser(userId: string) {
-  const current = await db.select().from(agents).where(eq(agents.userId, userId));
-  const additions: Array<typeof agents.$inferInsert> = [];
-  if (!current.some((agent) => agent.role === 'router')) {
-    additions.push({ id: randomUUID(), userId, name: 'Cérebro', personality: DEFAULT_ROUTER_PROMPT, provider: 'openai', model: 'gpt-4o-mini', isActive: true, role: 'router', serviceKey: 'general' });
-  }
-  if (!current.some((agent) => agent.role === 'specialist' && agent.serviceKey === 'sites')) {
-    additions.push({ id: randomUUID(), userId, name: 'Sites', personality: DEFAULT_SITES_PROMPT, provider: 'openai', model: 'gpt-4o-mini', isActive: true, role: 'specialist', serviceKey: 'sites' });
-  }
-  if (additions.length) await db.insert(agents).values(additions);
-}
 
 export async function getAgents() {
   const dbUser = await getDbUser();

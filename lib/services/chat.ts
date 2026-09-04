@@ -4,7 +4,7 @@ import { and, desc, eq, or } from 'drizzle-orm';
 import OpenAI, { toFile } from 'openai/index.js';
 import { randomUUID } from 'crypto';
 import { decryptSecret } from '../security/crypto';
-import { ensureDefaultAgentsForUser } from '../actions/agents';
+import { ensureDefaultAgentsForUser } from './default-agents';
 import { isSpecialistService, normalizeServiceKey, type ServiceKey } from './routing';
 
 type MediaData = { type: 'image' | 'audio'; base64: string; mimeType?: string } | undefined;
