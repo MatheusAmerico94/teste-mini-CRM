@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AUTOMATION_BLOCKED_STATUSES, isLeadStatus, LEAD_STATUSES } from '../lib/crm';
 import { decryptSecret, encryptSecret, maskSecret } from '../lib/security/crypto';
-import { packageSchema } from '../lib/validation';
+import { agentSchema, packageSchema } from '../lib/validation';
 import { isSpecialistService, normalizeServiceKey } from '../lib/services/routing';
 
 test('pipeline contém as etapas comerciais na ordem esperada', () => {
@@ -35,4 +35,10 @@ test('roteamento aceita somente os serviços especializados previstos', () => {
   assert.equal(normalizeServiceKey('qualquer coisa'), 'general');
   assert.equal(isSpecialistService('photos'), true);
   assert.equal(isSpecialistService('general'), false);
+});
+
+test('agente aceita instruções de até 40 mil caracteres', () => {
+  const input = { name: 'Laura', personality: 'a'.repeat(40_000), model: 'gpt-4o-mini' };
+  assert.equal(agentSchema.safeParse(input).success, true);
+  assert.equal(agentSchema.safeParse({ ...input, personality: 'a'.repeat(40_001) }).success, false);
 });
