@@ -14,6 +14,10 @@ type RouterResult = { reply: string; intent: ServiceKey; memoryUpdate?: Record<s
 
 function safeMemory(value: string | null) { try { return value ? JSON.parse(value) : {}; } catch { return {}; } }
 function nowInBrazil() { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', timeStyle: 'short' }).format(new Date()); }
+function greetingInBrazil() {
+  const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
+  return hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+}
 function findApiKey(list: Array<typeof agents.$inferSelect>) { return list.map((agent) => decryptSecret(agent.apiKey)).find(Boolean) || process.env.OPENAI_API_KEY; }
 
 function isIndecisiveReply(value: string) {
@@ -42,7 +46,7 @@ function routerReply(body: string, memory: Record<string, unknown>, suggestedRep
   };
 }
 
-function photosPrompt(agent: typeof agents.$inferSelect, lead: typeof leads.$inferSelect, settings: typeof businessSettings.$inferSelect | undefined, catalog: unknown, portfolio: unknown) {
+function photosPrompt(agent: typeof agents.$inferSelect, lead: typeof leads.$inferSelect, settings: typeof businessSettings.$inferSelect | undefined, catalog: unknown, portfolio: unknown, isFirstReply: boolean) {
   return `Você é ${agent.name}, atendente comercial de ensaios fotográficos com IA no WhatsApp. As regras abaixo têm prioridade sobre a personalidade.
 Personalidade: ${agent.personality}
 Data e hora atuais em Brasília: ${nowInBrazil()}. Etapa: ${lead.status || 'atendimento'}. Memória: ${JSON.stringify(safeMemory(lead.persistentMemory))}.
@@ -51,6 +55,7 @@ Regras comerciais: ${settings?.salesInstructions || 'Seja breve, educado e condu
 Pix manual: chave=${settings?.pixKey || 'não configurada'}, favorecido=${settings?.pixRecipient || 'não configurado'}.
 
 Regras obrigatórias:
+- ${isFirstReply ? `Este é o primeiro atendimento. Comece com "${greetingInBrazil()}" e uma recepção calorosa. Diga que pode explicar como funciona o ensaio com IA e apresente o próximo passo de forma curta, sem despejar preços antes de entender a ocasião.` : 'A conversa já está em andamento; não repita a saudação inicial.'}
 - Para data, dia ou hora, use exclusivamente a data atual acima. Não invente dados externos.
 - Nunca invente preço, pacote, desconto, prazo, URL, promoção, urgência, prova social ou dado Pix. Use somente os pacotes cadastrados.
 - Entenda a ocasião e faça no máximo uma pergunta por resposta. Podemos criar qualquer tema ou cenário com IA; não negue um tema só por não estar no portfólio.
@@ -123,6 +128,15 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     agent = activeAgents.find((item) => item.role === 'specialist' && item.serviceKey === service);
   }
   if (!isSpecialistService(service) || !agent) {
+    const photoAgent = activeAgents.find((item) => item.role === 'specialist' && item.serviceKey === 'photos');
+    if (photoAgent) {
+      service = 'photos';
+      agent = photoAgent;
+      await db.update(leads).set({ serviceKey: service, assignedAgentId: agent.id, updatedAt: new Date() }).where(eq(leads.id, activeLead.id));
+      activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
+    }
+  }
+  if (!isSpecialistService(service) || !agent) {
     const router = activeAgents.find((item) => item.role === 'router');
     if (!router) throw new Error('O agente Cérebro não está ativo');
     const routed = await classify(client, router, messageBody, history);
@@ -144,7 +158,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
   }
   const catalog = packages.map((item) => ({ name: item.name, description: item.description, price: item.price, imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays }));
-  const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl }))) : sitesPrompt(agent, activeLead);
+  const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), history.length <= 1) : sitesPrompt(agent, activeLead);
   const content: any = mediaData?.type === 'image' ? [{ type: 'text', text: messageBody || 'O cliente enviou esta imagem.' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } }] : messageBody;
   const ordered = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
   const completion = await client.chat.completions.create({ model: agent.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: 0.4, messages: [{ role: 'system', content: prompt }, ...ordered, { role: 'user', content }] });
