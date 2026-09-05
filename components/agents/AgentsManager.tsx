@@ -241,16 +241,16 @@ export function AgentsManager({ initialAgents }: Props) {
                                     id="personality"
                                     className="min-h-[150px] font-mono text-sm"
                                     placeholder="Você é um vendedor persuasivo mas amigável. Seu objetivo é descobrir a necessidade do cliente e agendar uma call. Responda sempre de forma curta e direta."
-                                    maxLength={40000}
+                                    maxLength={60000}
                                     {...form.register('personality', {
                                         required: 'A personalidade é obrigatória.',
                                         minLength: { value: 20, message: 'Use pelo menos 20 caracteres.' },
-                                        maxLength: { value: 40000, message: 'O limite é de 40.000 caracteres.' },
+                                        maxLength: { value: 60000, message: 'O limite é de 60.000 caracteres.' },
                                     })}
                                 />
                                 <div className="flex justify-between gap-4 text-xs">
                                     <span className="text-red-600">{form.formState.errors.personality?.message}</span>
-                                    <span className="ml-auto text-muted-foreground">{personalityLength.toLocaleString('pt-BR')} / 40.000</span>
+                                    <span className="ml-auto text-muted-foreground">{personalityLength.toLocaleString('pt-BR')} / 60.000</span>
                                 </div>
                             </div>
 

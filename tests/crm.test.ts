@@ -38,10 +38,10 @@ test('roteamento aceita somente os serviços especializados previstos', () => {
   assert.equal(isSpecialistService('general'), false);
 });
 
-test('agente aceita instruções de até 40 mil caracteres', () => {
-  const input = { name: 'Laura', personality: 'a'.repeat(40_000), model: 'gpt-4o-mini' };
+test('agente aceita instruções de até 60 mil caracteres', () => {
+  const input = { name: 'Laura', personality: 'a'.repeat(60_000), model: 'gpt-4o-mini' };
   assert.equal(agentSchema.safeParse(input).success, true);
-  assert.equal(agentSchema.safeParse({ ...input, personality: 'a'.repeat(40_001) }).success, false);
+  assert.equal(agentSchema.safeParse({ ...input, personality: 'a'.repeat(60_001) }).success, false);
 });
 
 test('Pix só é liberado após escolha explícita de pacote', () => {

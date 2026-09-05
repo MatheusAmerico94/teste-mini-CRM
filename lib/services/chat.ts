@@ -106,7 +106,7 @@ Regras comerciais: ${settings?.salesInstructions || 'Seja breve, educado e condu
 Pix manual: chave=${settings?.pixKey || 'não configurada'}, favorecido=${settings?.pixRecipient || 'não configurado'}, banco=${settings?.pixInstitution || 'não configurado'}.
 
 Regras obrigatórias:
-- ${isFirstReply ? `Este é o primeiro atendimento. Comece com "${greetingInBrazil()}" e uma recepção calorosa. Diga que pode explicar como funciona o ensaio com IA e apresente o próximo passo de forma curta, sem despejar preços antes de entender a ocasião.` : 'A conversa já está em andamento; não repita a saudação inicial.'}
+- ${isFirstReply ? `Este é o primeiro atendimento. O CRM enviará antes da sua resposta a primeira mensagem curta "${greetingInBrazil()}! Tudo bem?". Sua reply será enviada como uma segunda mensagem separada: continue de modo acolhedor, diga que pode explicar como funciona o ensaio com IA e apresente o próximo passo de forma curta. Não repita a saudação e não despeje preços antes de entender a ocasião.` : 'A conversa já está em andamento; não repita a saudação inicial.'}
 - Para data, dia ou hora, use exclusivamente a data atual acima. Não invente dados externos.
 - Nunca invente preço, pacote, desconto, prazo, URL, promoção, urgência, prova social ou dado Pix. Use somente os pacotes cadastrados.
 - Entenda a ocasião e faça no máximo uma pergunta por resposta. Podemos criar qualquer tema ou cenário com IA; não negue um tema só por não estar no portfólio.
@@ -255,6 +255,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   if (hadPixSent && !resendRequested) {
     reply = reply.replaceAll(pixKey, '').replace(/\s{2,}/g, ' ').trim() || 'A chave Pix já foi enviada acima. Se precisar que eu a reenvie, é só me pedir. 😊';
   }
+  const shouldSplitInitialPhotoReply = service === 'photos' && history.length <= 1 && !shouldSendPix;
   const outgoingMessages = shouldSendPix && hadPixSent && resendRequested
     ? [pixKey]
     : shouldSendPix
@@ -263,6 +264,8 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
       pixKey,
       paymentRecipientDetails,
     ]
+    : shouldSplitInitialPhotoReply
+    ? [`${greetingInBrazil()}! Tudo bem?`, reply]
     : [reply];
   await db.transaction(async (tx) => {
     const proofReceived = nextStatus === 'comprovante_recebido';
