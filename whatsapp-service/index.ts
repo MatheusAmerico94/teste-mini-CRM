@@ -51,6 +51,26 @@ let persistTimer: NodeJS.Timeout | null = null;
 let persistQueue = Promise.resolve();
 const pendingConversations = new Map<string, { userId: string; socket: any; messages: any[]; timer: NodeJS.Timeout }>();
 const processingConversations = new Map<string, Promise<void>>();
+const INTER_MESSAGE_DELAY_MS = 3_500;
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function sendAutomatedReplies(currentSocket: any, jid: string, replies: string[]) {
+  for (const [index, reply] of replies.entries()) {
+    if (sock !== currentSocket) return;
+    if (index > 0) {
+      // Uma pequena pausa entre mensagens separadas deixa a conversa natural,
+      // sem atrasar a primeira resposta do atendimento.
+      await currentSocket.sendPresenceUpdate('composing', jid).catch(() => undefined);
+      await wait(INTER_MESSAGE_DELAY_MS);
+      await currentSocket.sendPresenceUpdate('paused', jid).catch(() => undefined);
+      if (sock !== currentSocket) return;
+    }
+    await currentSocket.sendMessage(jid, { text: reply });
+  }
+}
 
 function authorize(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (req.headers.authorization !== `Bearer ${serviceToken}`) return res.status(401).json({ error: 'Não autorizado' });
@@ -161,10 +181,7 @@ async function processIncomingBatch(userId: string, currentSocket: any, incoming
   } catch (error) {
     logger.warn({ err: error, messageIds: ids }, 'falha ao confirmar leitura');
   }
-  for (const reply of replies) {
-    if (sock !== currentSocket) return;
-    await currentSocket.sendMessage(jid, { text: reply });
-  }
+  await sendAutomatedReplies(currentSocket, jid, replies);
 }
 
 function queueIncomingMessage(userId: string, currentSocket: any, msg: any) {
