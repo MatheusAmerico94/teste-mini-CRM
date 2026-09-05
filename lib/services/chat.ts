@@ -199,6 +199,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     db.select().from(messages).where(eq(messages.leadId, activeLead.id)).orderBy(desc(messages.createdAt)).limit(12),
   ]);
   let service = normalizeServiceKey(activeLead.serviceKey);
+  let isFirstSpecialistReply = false;
   let agent = activeAgents.find((item) => item.id === activeLead.assignedAgentId && item.role === 'specialist');
   if (!agent && isSpecialistService(service)) {
     agent = activeAgents.find((item) => item.role === 'specialist' && item.serviceKey === service);
@@ -208,6 +209,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     if (photoAgent) {
       service = 'photos';
       agent = photoAgent;
+      isFirstSpecialistReply = true;
       await db.update(leads).set({ serviceKey: service, assignedAgentId: agent.id, updatedAt: new Date() }).where(eq(leads.id, activeLead.id));
       activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
     }
@@ -230,11 +232,12 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
       await db.transaction(async (tx) => { await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply }); await tx.update(leads).set({ serviceKey: service, aiEnabled: false, handoffAt: new Date(), updatedAt: new Date() }).where(eq(leads.id, activeLead.id)); });
       return [reply];
     }
+    isFirstSpecialistReply = true;
     await db.update(leads).set({ serviceKey: service, assignedAgentId: agent.id, updatedAt: new Date() }).where(eq(leads.id, activeLead.id));
     activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
   }
   const catalog: PackageSummary[] = packages.map((item) => ({ id: item.id, name: item.name, description: item.description, price: item.price, imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays }));
-  const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), history.length <= 1) : sitesPrompt(agent, activeLead);
+  const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), isFirstSpecialistReply) : sitesPrompt(agent, activeLead);
   const content: any = mediaData?.type === 'image' ? [{ type: 'text', text: messageBody || 'O cliente enviou esta imagem.' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } }] : messageBody;
   const ordered = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
   const completion = await client.chat.completions.create({ model: agent.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: agent.responseTemperature ?? 0.7, messages: [{ role: 'system', content: prompt }, ...ordered, { role: 'user', content }] });
@@ -279,7 +282,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   if (hadPixSent && !resendRequested) {
     reply = reply.replaceAll(pixKey, '').replace(/\s{2,}/g, ' ').trim() || 'Perfeito. Fico à disposição se precisar de ajuda.';
   }
-  const shouldSplitInitialPhotoReply = service === 'photos' && history.length <= 1 && !shouldSendPix;
+  const shouldSplitInitialPhotoReply = service === 'photos' && isFirstSpecialistReply && !shouldSendPix;
   const firstReplyGreeting = greetingInBrazil();
   const initialFollowUpReply = shouldSplitInitialPhotoReply
     ? removeRepeatedInitialGreeting(reply, firstReplyGreeting) || 'Claro. Posso te explicar como funciona o ensaio com IA. Você já tem alguma ideia do tipo de foto que gostaria?'
