@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type UIEvent } from 'react';
 import { confirmManualPayment, getLeadMessages, getLeads, setLeadAutomation } from '@/lib/actions/leads';
 import { sendManualMessage } from '@/lib/actions/whatsapp';
 import { UserCircle2, Search, MoreVertical, MessageSquare, ArrowLeft, Bot, UserRoundCheck, BadgeCheck, Send, Smartphone } from 'lucide-react';
@@ -34,6 +34,8 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
     const [isLoadingMsgs, setIsLoadingMsgs] = useState(false);
     const [manualMessage, setManualMessage] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const isNearMessagesBottomRef = useRef(true);
+    const shouldScrollOnNextMessagesRef = useRef(true);
 
     // Filter leads based on search
     const filteredLeads = leads.filter(l =>
@@ -75,6 +77,9 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
         let active = true;
         let timer: number | undefined;
         setIsLoadingMsgs(true);
+        setMessages([]);
+        isNearMessagesBottomRef.current = true;
+        shouldScrollOnNextMessagesRef.current = true;
         const refreshMessages = async () => {
             try {
                 if (document.visibilityState === 'visible') {
@@ -97,10 +102,19 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
         };
     }, [selectedLeadId]);
 
-    // Auto scroll to bottom of messages
+    // Only follow new messages while the person is already reading the end of the chat.
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (!messages.length) return;
+        if (shouldScrollOnNextMessagesRef.current || isNearMessagesBottomRef.current) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+            shouldScrollOnNextMessagesRef.current = false;
+        }
     }, [messages]);
+
+    const handleMessagesScroll = (event: UIEvent<HTMLDivElement>) => {
+        const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+        isNearMessagesBottomRef.current = scrollHeight - scrollTop - clientHeight < 80;
+    };
 
     const getTemperatureColor = (temp: string) => {
         if (temp === 'quente') return 'bg-red-500';
@@ -231,7 +245,7 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
                         </div>
 
                         {/* Messages Area */}
-                        <ScrollArea className="flex-1 w-full p-4 md:p-6 z-10">
+                        <div className="flex-1 w-full overflow-y-auto p-4 md:p-6 z-10" onScroll={handleMessagesScroll}>
                             {isLoadingMsgs ? (
                                 <div className="flex items-center justify-center h-full">
                                     <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur text-sm px-4 py-2 rounded-full shadow-sm">
@@ -274,7 +288,7 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
                                     <div ref={messagesEndRef} />
                                 </div>
                             )}
-                        </ScrollArea>
+                        </div>
 
                         <div className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center px-4 z-10 gap-2">
                             <Input value={manualMessage} onChange={(e) => setManualMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendMessage(); }} placeholder={selectedLead.aiEnabled ? 'Assuma a conversa para responder manualmente' : 'Digite sua mensagem'} disabled={selectedLead.aiEnabled} className="flex-1 bg-white dark:bg-[#2a3942]" />
