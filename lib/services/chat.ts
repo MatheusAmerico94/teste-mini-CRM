@@ -81,7 +81,7 @@ async function classify(client: OpenAI, router: typeof agents.$inferSelect, body
 Se ainda não estiver claro, conduza com naturalidade, considerando toda a conversa: não repita a mesma pergunta nem liste os serviços de modo robótico. Uma saudação simples pede uma pergunta acolhedora. Se a pessoa disser "não sei", "talvez" ou demonstrar indecisão, ajude-a a escolher com exemplos simples de resultado, como fotos para uma ocasião ou mais presença online para uma empresa. Em uma segunda indecisão, peça uma resposta curta como "FOTOS", "SITE" ou uma frase sobre a necessidade. Nunca fique em loop.
 Se estiver claro, reply pode ser vazio porque o especialista responderá. Não explique o encaminhamento e não invente condições. Retorne somente JSON: {"reply":"texto", "intent":"general|photos|sites", "memoryUpdate":{}}.`;
   const previous = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
-  const completion = await client.chat.completions.create({ model: router.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: 0.2, messages: [{ role: 'system', content: prompt }, ...previous, { role: 'user', content: body || '[Imagem recebida]' }] });
+  const completion = await client.chat.completions.create({ model: router.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: router.responseTemperature ?? 0.3, messages: [{ role: 'system', content: prompt }, ...previous, { role: 'user', content: body || '[Imagem recebida]' }] });
   const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}') as Partial<RouterResult>;
   return { reply: String(parsed.reply || '').trim(), intent: normalizeServiceKey(parsed.intent), memoryUpdate: parsed.memoryUpdate };
 }
@@ -161,7 +161,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), history.length <= 1) : sitesPrompt(agent, activeLead);
   const content: any = mediaData?.type === 'image' ? [{ type: 'text', text: messageBody || 'O cliente enviou esta imagem.' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } }] : messageBody;
   const ordered = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
-  const completion = await client.chat.completions.create({ model: agent.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: 0.4, messages: [{ role: 'system', content: prompt }, ...ordered, { role: 'user', content }] });
+  const completion = await client.chat.completions.create({ model: agent.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: agent.responseTemperature ?? 0.7, messages: [{ role: 'system', content: prompt }, ...ordered, { role: 'user', content }] });
   const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}') as Partial<AgentResult>;
   const reply = String(parsed.reply || '').trim(); if (!reply) throw new Error('A OpenAI retornou uma resposta vazia');
   const temperature = ['frio', 'morno', 'quente'].includes(parsed.temperature || '') ? parsed.temperature! : activeLead.temperature || 'frio';

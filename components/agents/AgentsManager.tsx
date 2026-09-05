@@ -14,7 +14,7 @@ import { Bot, Plus, Save, Trash2, BrainCircuit, KeyRound, Pencil } from 'lucide-
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 
-type Agent = { id: string; name: string; personality: string; provider: string; model?: string | null; apiKey?: string; isActive?: boolean | null; role?: string; serviceKey?: string; userId?: string; createdAt?: Date; updatedAt?: Date; hasApiKey?: boolean };
+type Agent = { id: string; name: string; personality: string; provider: string; model?: string | null; apiKey?: string; responseTemperature?: number | null; isActive?: boolean | null; role?: string; serviceKey?: string; userId?: string; createdAt?: Date; updatedAt?: Date; hasApiKey?: boolean };
 
 const OPENAI_MODELS = [
     { value: 'gpt-4o-mini', label: 'GPT-4o mini', description: 'Mais econômico para testes' },
@@ -81,6 +81,7 @@ export function AgentsManager({ initialAgents }: Props) {
             provider: 'openai',
             model: agent.model || 'gpt-4o-mini',
             apiKey: '',
+            responseTemperature: agent.responseTemperature ?? (agent.role === 'router' ? 0.3 : 0.7),
             isActive: Boolean(agent.isActive),
             role: agent.role === 'router' ? 'router' : 'specialist',
             serviceKey: agent.serviceKey === 'photos' || agent.serviceKey === 'sites' ? agent.serviceKey : 'general',
@@ -109,6 +110,7 @@ export function AgentsManager({ initialAgents }: Props) {
                 provider: 'openai',
                 model: agent.model || 'gpt-4o-mini',
                 apiKey: '',
+                responseTemperature: agent.responseTemperature ?? (agent.role === 'router' ? 0.3 : 0.7),
                 isActive,
                 role: agent.role === 'router' ? 'router' : 'specialist',
                 serviceKey: agent.serviceKey === 'photos' || agent.serviceKey === 'sites' ? agent.serviceKey : 'general',
@@ -141,7 +143,7 @@ export function AgentsManager({ initialAgents }: Props) {
                     <p className="text-muted-foreground">Gerencie os assistentes que interagem com seus leads.</p>
                 </div>
                 {!isCreating && !editingAgent && (
-                    <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', isActive: true, role: 'specialist', serviceKey: 'general' }); }} className="bg-primary hover:bg-primary/90 text-white">
+                    <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', responseTemperature: 0.7, isActive: true, role: 'specialist', serviceKey: 'general' }); }} className="bg-primary hover:bg-primary/90 text-white">
                         <Plus className="mr-2 h-4 w-4" /> Novo Agente
                     </Button>
                 )}
@@ -209,6 +211,20 @@ export function AgentsManager({ initialAgents }: Props) {
                                 </div>
 
                                 <div className="space-y-2">
+                                    <Label htmlFor="responseTemperature">Temperatura da resposta</Label>
+                                    <Input
+                                        id="responseTemperature"
+                                        type="number"
+                                        min="0"
+                                        max="2"
+                                        step="0.1"
+                                        inputMode="decimal"
+                                        {...form.register('responseTemperature', { valueAsNumber: true, min: 0, max: 2 })}
+                                    />
+                                    <p className="text-xs text-muted-foreground">0 é mais previsível; 0,7 deixa a conversa mais natural. Use até 2.</p>
+                                </div>
+
+                                <div className="space-y-2">
                                     <Label htmlFor="apiKey">API Key</Label>
                                     <Input id="apiKey" type="password" placeholder="sk-..." {...form.register('apiKey')} />
                                     {editingAgent?.hasApiKey ? (
@@ -258,7 +274,7 @@ export function AgentsManager({ initialAgents }: Props) {
                         </div>
                         <h3 className="text-lg font-medium">Nenhum agente configurado</h3>
                         <p className="text-sm text-muted-foreground mt-1 mb-4">Crie seu primeiro agente de IA para automatizar seu WhatsApp.</p>
-                        <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', isActive: true, role: 'specialist', serviceKey: 'general' }); }} variant="outline">Criar Agente</Button>
+                        <Button onClick={() => { setIsCreating(true); form.reset({ provider: 'openai', model: 'gpt-4o-mini', responseTemperature: 0.7, isActive: true, role: 'specialist', serviceKey: 'general' }); }} variant="outline">Criar Agente</Button>
                     </div>
                 )}
                 {agents.map((agent) => (

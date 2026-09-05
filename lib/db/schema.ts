@@ -57,6 +57,7 @@ export const agents = pgTable('agents', {
     provider: text('provider').notNull().default('openai'),
     model: text('model'),
     apiKey: text('api_key'),
+    responseTemperature: doublePrecision('response_temperature').notNull().default(0.7),
     isActive: boolean('is_active').default(true),
     role: text('role').notNull().default('specialist'), // router or specialist
     serviceKey: text('service_key').notNull().default('general'), // general, photos, sites

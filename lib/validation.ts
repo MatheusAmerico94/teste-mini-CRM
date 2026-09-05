@@ -9,6 +9,7 @@ export const agentSchema = z.object({
   provider: z.literal('openai').default('openai'),
   model: z.string().trim().min(1).max(80).default('gpt-4o-mini'),
   apiKey: z.string().trim().max(300).optional(),
+  responseTemperature: z.coerce.number().min(0).max(2).default(0.7),
   isActive: z.boolean().default(true),
   role: z.enum(['router', 'specialist']).default('specialist'),
   serviceKey: z.enum(['general', 'photos', 'sites']).default('general'),

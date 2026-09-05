@@ -16,6 +16,7 @@ export type AgentInput = {
   provider?: 'openai';
   model?: string;
   apiKey?: string;
+  responseTemperature?: number;
   isActive?: boolean;
   role?: 'router' | 'specialist';
   serviceKey?: 'general' | 'photos' | 'sites';
