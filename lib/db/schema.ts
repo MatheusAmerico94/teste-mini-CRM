@@ -119,6 +119,7 @@ export const businessSettings = pgTable('business_settings', {
     businessName: text('business_name').notNull().default('Estúdio de Ensaios com IA'),
     pixKey: text('pix_key'),
     pixRecipient: text('pix_recipient'),
+    pixInstitution: text('pix_institution'),
     defaultGreeting: text('default_greeting'),
     salesInstructions: text('sales_instructions'),
     paymentInstructions: text('payment_instructions'),

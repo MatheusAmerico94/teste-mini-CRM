@@ -52,7 +52,7 @@ Personalidade: ${agent.personality}
 Data e hora atuais em Brasília: ${nowInBrazil()}. Etapa: ${lead.status || 'atendimento'}. Memória: ${JSON.stringify(safeMemory(lead.persistentMemory))}.
 Pacotes autorizados: ${JSON.stringify(catalog)}. Portfólio: ${JSON.stringify(portfolio)}.
 Regras comerciais: ${settings?.salesInstructions || 'Seja breve, educado e conduza até a escolha de um pacote.'}
-Pix manual: chave=${settings?.pixKey || 'não configurada'}, favorecido=${settings?.pixRecipient || 'não configurado'}.
+Pix manual: chave=${settings?.pixKey || 'não configurada'}, favorecido=${settings?.pixRecipient || 'não configurado'}, banco=${settings?.pixInstitution || 'não configurado'}.
 
 Regras obrigatórias:
 - ${isFirstReply ? `Este é o primeiro atendimento. Comece com "${greetingInBrazil()}" e uma recepção calorosa. Diga que pode explicar como funciona o ensaio com IA e apresente o próximo passo de forma curta, sem despejar preços antes de entender a ocasião.` : 'A conversa já está em andamento; não repita a saudação inicial.'}
@@ -170,8 +170,9 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   const memory = parsed.memoryUpdate && typeof parsed.memoryUpdate === 'object' ? { ...safeMemory(activeLead.persistentMemory), ...parsed.memoryUpdate } : safeMemory(activeLead.persistentMemory);
   const outgoingMessages = service === 'photos' && nextStatus === 'aguardando_pix' && settings?.pixKey
     ? [
-      'Perfeito! 😊 Para concluir, faça o pagamento por Pix no valor combinado. A chave está na próxima mensagem para você copiar facilmente. Depois, envie o comprovante para conferência manual.',
+      'Que bom que você gostou! 😊 Vamos caprichar no seu ensaio. Logo abaixo vou te mandar a chave Pix para você copiar com facilidade. Depois do pagamento, envie o comprovante para conferência manual.',
       settings.pixKey,
+      [settings.pixRecipient && `Favorecido: ${settings.pixRecipient}`, settings.pixInstitution && `Banco: ${settings.pixInstitution}`].filter(Boolean).join('\n') || 'Confira os dados do favorecido no seu aplicativo antes de concluir o pagamento.',
     ]
     : [reply];
   await db.transaction(async (tx) => {

@@ -22,7 +22,7 @@ export function BusinessSettingsManager({ initialConfiguration }: { initialConfi
   const saveSettings = async () => {
     await saveBusinessSettings({
       businessName: settings.businessName || 'Estúdio de Ensaios com IA',
-      pixKey: settings.pixKey || '', pixRecipient: settings.pixRecipient || '',
+      pixKey: settings.pixKey || '', pixRecipient: settings.pixRecipient || '', pixInstitution: settings.pixInstitution || '',
       defaultGreeting: settings.defaultGreeting || '', salesInstructions: settings.salesInstructions || '',
       paymentInstructions: settings.paymentInstructions || '', humanHandoffMessage: settings.humanHandoffMessage || '',
     });
@@ -47,6 +47,7 @@ export function BusinessSettingsManager({ initialConfiguration }: { initialConfi
       <CardContent className="grid gap-4 md:grid-cols-2">
         <Field label="Nome do negócio"><Input value={settings.businessName || ''} onChange={(e) => setSettings({ ...settings, businessName: e.target.value })} /></Field>
         <Field label="Nome do favorecido"><Input value={settings.pixRecipient || ''} onChange={(e) => setSettings({ ...settings, pixRecipient: e.target.value })} /></Field>
+        <Field label="Banco do Pix"><Input value={settings.pixInstitution || ''} onChange={(e) => setSettings({ ...settings, pixInstitution: e.target.value })} placeholder="Ex.: Banco Inter" /></Field>
         <Field label="Chave Pix"><Input value={settings.pixKey || ''} onChange={(e) => setSettings({ ...settings, pixKey: e.target.value })} /></Field>
         <Field label="Saudação inicial"><Input value={settings.defaultGreeting || ''} onChange={(e) => setSettings({ ...settings, defaultGreeting: e.target.value })} /></Field>
         <Field label="Regras de venda" wide><Textarea className="min-h-32" value={settings.salesInstructions || ''} onChange={(e) => setSettings({ ...settings, salesInstructions: e.target.value })} /></Field>

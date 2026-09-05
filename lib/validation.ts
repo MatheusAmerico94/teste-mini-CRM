@@ -32,6 +32,7 @@ export const businessSettingsSchema = z.object({
   businessName: z.string().trim().min(2).max(120),
   pixKey: z.string().trim().max(200).optional(),
   pixRecipient: z.string().trim().max(120).optional(),
+  pixInstitution: z.string().trim().max(120).optional(),
   defaultGreeting: z.string().trim().max(1000).optional(),
   salesInstructions: z.string().trim().max(6000).optional(),
   paymentInstructions: z.string().trim().max(1500).optional(),
