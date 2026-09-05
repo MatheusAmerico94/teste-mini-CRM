@@ -19,6 +19,12 @@ function greetingInBrazil() {
   const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
   return hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
 }
+export function removeRepeatedInitialGreeting(reply: string, greeting = greetingInBrazil()) {
+  const escapedGreeting = greeting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return reply
+    .replace(new RegExp(`^\\s*${escapedGreeting}(?:[!,.\\s]+(?:tudo bem\\??)?)?\\s*`, 'i'), '')
+    .trim();
+}
 function findApiKey(list: Array<typeof agents.$inferSelect>) { return list.map((agent) => decryptSecret(agent.apiKey)).find(Boolean) || process.env.OPENAI_API_KEY; }
 
 function normalizeText(value: string) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
@@ -274,6 +280,10 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     reply = reply.replaceAll(pixKey, '').replace(/\s{2,}/g, ' ').trim() || 'Perfeito. Fico à disposição se precisar de ajuda.';
   }
   const shouldSplitInitialPhotoReply = service === 'photos' && history.length <= 1 && !shouldSendPix;
+  const firstReplyGreeting = greetingInBrazil();
+  const initialFollowUpReply = shouldSplitInitialPhotoReply
+    ? removeRepeatedInitialGreeting(reply, firstReplyGreeting) || 'Claro. Posso te explicar como funciona o ensaio com IA. Você já tem alguma ideia do tipo de foto que gostaria?'
+    : reply;
   const outgoingMessages = shouldSendPix && hadPixSent && resendRequested
     ? [pixKey]
     : packageChangedAfterPix && selectedPackage
@@ -285,7 +295,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
       paymentRecipientDetails,
     ]
     : shouldSplitInitialPhotoReply
-    ? [`${greetingInBrazil()}! Tudo bem?`, reply]
+    ? [`${firstReplyGreeting}! Tudo bem?`, initialFollowUpReply]
     : [reply];
   await db.transaction(async (tx) => {
     const proofReceived = nextStatus === 'comprovante_recebido';
