@@ -45,9 +45,18 @@ test('agente aceita instruções de até 60 mil caracteres', () => {
 });
 
 test('Pix só é liberado após escolha explícita de pacote', () => {
-  const packages: PackageSummary[] = [{ name: '10 fotos', description: null, price: 29.9, imageCount: 10, deliveryHours: 2, deliveryDays: 0 }];
+  const packages: PackageSummary[] = [
+    { name: '2 fotos', description: null, price: 10, imageCount: 2, deliveryHours: 2, deliveryDays: 0 },
+    { name: '5 fotos', description: null, price: 20, imageCount: 5, deliveryHours: 2, deliveryDays: 0 },
+    { name: '10 fotos', description: null, price: 30, imageCount: 10, deliveryHours: 2, deliveryDays: 0 },
+  ];
   assert.equal(selectedPackageFromMessage('Perfeito, vou querer', packages), undefined);
   assert.equal(selectedPackageFromMessage('Vou querer o pacote de 10 fotos', packages)?.name, '10 fotos');
+  assert.equal(selectedPackageFromMessage('10 fotos', packages)?.name, '10 fotos');
+  assert.equal(selectedPackageFromMessage('vou de 5', packages)?.name, '5 fotos');
+  assert.equal(selectedPackageFromMessage('quero testar com 2', packages)?.name, '2 fotos');
+  assert.equal(selectedPackageFromMessage('o de 30', packages)?.name, '10 fotos');
+  assert.equal(selectedPackageFromMessage('dez', packages, 'Temos 2, 5 e 10 fotos. Qual faz mais sentido pra você?')?.name, '10 fotos');
   assert.equal(selectedPackageFromMessage('Sim', packages, 'Quer seguir com o pacote de 10 fotos por R$29,90?')?.name, '10 fotos');
   assert.equal(selectedPackageFromMessage('Sim', packages, 'Você prefere um estilo elegante?'), undefined);
 });

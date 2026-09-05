@@ -31,7 +31,7 @@ export function isConversationGreeting(value: string) {
 function findApiKey(list: Array<typeof agents.$inferSelect>) { return list.map((agent) => decryptSecret(agent.apiKey)).find(Boolean) || process.env.OPENAI_API_KEY; }
 
 function normalizeText(value: string) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
-function hasPurchaseIntent(value: string) { return /\b(quero|vou querer|fecho|fechar|escolho|escolher|prefiro|fico com|vamos com|pode ser)\b/.test(normalizeText(value)); }
+function hasPurchaseIntent(value: string) { return /\b(quero|vou querer|vou de|fecho|fechar|escolho|escolher|prefiro|fico com|vamos com|pode ser)\b/.test(normalizeText(value)); }
 export function isPixResendRequest(value: string) {
   const text = normalizeText(value);
   return [
@@ -60,17 +60,35 @@ function formatPrice(value: number | null) { return Number(value || 0).toLocaleS
 
 export function selectedPackageFromMessage(body: string, catalog: PackageSummary[], previousAssistantMessage = '') {
   const message = normalizeText(body);
-  const findMentionedPackage = (text: string) => catalog.find((item) => {
-    const count = item.imageCount;
-    if (!count) return false;
-    const countWords: Record<number, string> = { 2: 'duas', 5: 'cinco', 10: 'dez' };
-    const countPattern = new RegExp(`\\b(${count}|${countWords[count] || ''})\\s*(fotos?|imagens?)?\\b`);
-    return countPattern.test(text) || text.includes(normalizeText(item.name));
-  });
-  if (hasPurchaseIntent(body)) return findMentionedPackage(message);
+  const previous = normalizeText(previousAssistantMessage);
+  const hasPackageSelectionContext = /\b(qual (pacote|opcao)|qual.*faz sentido|escolha.*pacote|temos.*(fotos|imagens)|pacote.*prefere)\b/.test(previous);
+  const allowsBareQuantity = hasPurchaseIntent(body) || hasPackageSelectionContext;
+  const findMentionedPackage = (text: string) => {
+    const byQuantity = catalog.find((item) => {
+      const count = item.imageCount;
+      if (!count) return false;
+      const countWords: Record<number, string> = { 2: 'duas', 5: 'cinco', 10: 'dez' };
+      const quantity = `(?:${count}|${countWords[count] || ''})`;
+      const explicitPhotoCount = new RegExp(`\\b${quantity}\\s*(?:fotos?|imagens?)\\b`);
+      const bareQuantity = new RegExp(`\\b${quantity}\\b`);
+      return explicitPhotoCount.test(text) || text.includes(normalizeText(item.name)) || (allowsBareQuantity && bareQuantity.test(text));
+    });
+    if (byQuantity) return byQuantity;
+    return catalog.find((item) => {
+      const price = Number(item.price || 0);
+      if (!price) return false;
+      const integerPrice = Math.trunc(price);
+      const pricePattern = new RegExp(`(?:r\\$\\s*)?${integerPrice}(?:[,.]0+)?\\b`);
+      return pricePattern.test(text);
+    });
+  };
+  const mentionedPackage = findMentionedPackage(message);
+  if (mentionedPackage) {
+    const hasExplicitPackageReference = /\b(fotos?|imagens?|pacote|r\$)\b/.test(message) || /\b(o de|a de)\s*\d+\b/.test(message);
+    if (hasPurchaseIntent(body) || hasPackageSelectionContext || hasExplicitPackageReference) return mentionedPackage;
+  }
   const isSimpleConfirmation = /^(sim|pode ser|fechado|vamos|quero esse|esse mesmo)[!.?\s]*$/.test(message);
   if (!isSimpleConfirmation) return undefined;
-  const previous = normalizeText(previousAssistantMessage);
   if (!/\b(quer seguir|quer fechar|qual pacote|pacote)\b/.test(previous)) return undefined;
   return findMentionedPackage(previous);
 }
@@ -241,8 +259,19 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
   }
   const catalog: PackageSummary[] = packages.map((item) => ({ id: item.id, name: item.name, description: item.description, price: item.price, imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays }));
+  const lastAssistantMessage = history.find((item) => item.role === 'assistant')?.content || '';
+  // A escolha é detectada antes da chamada à IA para que o próprio prompt já
+  // receba o estado comercial atual e a resposta não volte a pedir o pacote.
+  const selectedPackage = service === 'photos' ? selectedPackageFromMessage(messageBody, catalog, lastAssistantMessage) : undefined;
+  const leadForPrompt = selectedPackage ? {
+    ...activeLead,
+    selectedPackageId: selectedPackage.id || activeLead.selectedPackageId,
+    selectedQuantity: selectedPackage.imageCount || activeLead.selectedQuantity,
+    selectedPrice: selectedPackage.price || activeLead.selectedPrice,
+    packageConfirmed: true,
+  } : activeLead;
   const conversationAlreadyGreeted = Boolean(safeMemory(activeLead.persistentMemory).conversationAlreadyGreeted);
-  const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), isFirstSpecialistReply, conversationAlreadyGreeted) : sitesPrompt(agent, activeLead);
+  const prompt = service === 'photos' ? photosPrompt(agent, leadForPrompt, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), isFirstSpecialistReply, conversationAlreadyGreeted) : sitesPrompt(agent, activeLead);
   const content: any = mediaData?.type === 'image' ? [{ type: 'text', text: messageBody || 'O cliente enviou esta imagem.' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } }] : messageBody;
   const ordered = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
   const completion = await client.chat.completions.create({ model: agent.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: agent.responseTemperature ?? 0.7, messages: [{ role: 'system', content: prompt }, ...ordered, { role: 'user', content }] });
@@ -253,8 +282,6 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   let nextStatus = allowed.includes(parsed.nextStatus || '') ? parsed.nextStatus! : activeLead.status || 'atendimento';
   const previousMemory = safeMemory(activeLead.persistentMemory);
   const memory = parsed.memoryUpdate && typeof parsed.memoryUpdate === 'object' ? { ...previousMemory, ...parsed.memoryUpdate } : previousMemory;
-  const lastAssistantMessage = history.find((item) => item.role === 'assistant')?.content || '';
-  const selectedPackage = service === 'photos' ? selectedPackageFromMessage(messageBody, catalog, lastAssistantMessage) : undefined;
   const userIntent = detectUserIntent(messageBody, Boolean(mediaData));
   const hadPixSent = activeLead.pixSent;
   const resendRequested = isPixResendRequest(messageBody);
@@ -263,7 +290,8 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     memory.selectedPackageName = selectedPackage.name;
     memory.selectedPackageImages = selectedPackage.imageCount || 0;
     memory.selectedPackageValue = selectedPackage.price || 0;
-    if (!hadPixSent || packageChangedAfterPix) nextStatus = 'aguardando_pix';
+    nextStatus = 'aguardando_pix';
+    reply = packageChangedAfterPix ? packageUpdatedAfterPixMessage(selectedPackage) : packagePixConfirmationMessage(selectedPackage);
   }
   const hasSelectedPackage = Boolean(selectedPackage || activeLead.packageConfirmed);
   if (service === 'photos' && nextStatus === 'aguardando_pix' && !hasSelectedPackage) {
