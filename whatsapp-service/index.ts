@@ -39,6 +39,7 @@ let sessionRevision = 0;
 let persistTimer: NodeJS.Timeout | null = null;
 let persistQueue = Promise.resolve();
 const pendingConversations = new Map<string, { userId: string; socket: any; messages: any[]; timer: NodeJS.Timeout }>();
+const processingConversations = new Map<string, Promise<void>>();
 
 function authorize(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (req.headers.authorization !== `Bearer ${serviceToken}`) return res.status(401).json({ error: 'Não autorizado' });
@@ -162,8 +163,13 @@ function queueIncomingMessage(userId: string, currentSocket: any, msg: any) {
   const messages = existing && existing.socket === currentSocket ? [...existing.messages, msg] : [msg];
   const timer = setTimeout(() => {
     pendingConversations.delete(key);
-    processIncomingBatch(userId, currentSocket, messages).catch((error) => {
+    const previous = processingConversations.get(key) || Promise.resolve();
+    const current = previous.catch(() => undefined).then(() => processIncomingBatch(userId, currentSocket, messages));
+    processingConversations.set(key, current);
+    current.catch((error) => {
       logger.error({ err: error, messageIds: messages.map((item) => item.key.id) }, 'falha ao processar grupo de mensagens');
+    }).finally(() => {
+      if (processingConversations.get(key) === current) processingConversations.delete(key);
     });
   }, 5000);
   pendingConversations.set(key, { userId, socket: currentSocket, messages, timer });

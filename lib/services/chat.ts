@@ -11,7 +11,7 @@ type MediaData = { type: 'image' | 'audio'; base64: string; mimeType?: string } 
 type ContactData = { name?: string; avatarUrl?: string; legacyNumber?: string };
 type AgentResult = { reply: string; temperature: 'frio' | 'morno' | 'quente'; nextStatus?: 'atendimento' | 'oferta' | 'aguardando_pix' | 'comprovante_recebido'; memoryUpdate?: Record<string, string | number | boolean>; handoffRequested?: boolean };
 type RouterResult = { reply: string; intent: ServiceKey; memoryUpdate?: Record<string, string | number | boolean> };
-export type PackageSummary = { name: string; description: string | null; price: number | null; imageCount: number | null; deliveryHours: number | null; deliveryDays: number | null };
+export type PackageSummary = { id?: string; name: string; description: string | null; price: number | null; imageCount: number | null; deliveryHours: number | null; deliveryDays: number | null };
 
 function safeMemory(value: string | null) { try { return value ? JSON.parse(value) : {}; } catch { return {}; } }
 function nowInBrazil() { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', timeStyle: 'short' }).format(new Date()); }
@@ -25,18 +25,37 @@ function normalizeText(value: string) { return value.normalize('NFD').replace(/[
 function hasPurchaseIntent(value: string) { return /\b(quero|vou querer|fecho|fechar|escolho|escolher|prefiro|fico com|vamos com|pode ser)\b/.test(normalizeText(value)); }
 function isPixResendRequest(value: string) { return /\b(reenvia|reenvie|reenviar|manda.*(pix|chave).*de novo|pix.*de novo|chave pix)\b/.test(normalizeText(value)); }
 function isDeliveryQuestion(value: string) { return /\b(prazo|entrega|demora|quanto tempo|quando fica pronto|quando entrega)\b/.test(normalizeText(value)); }
+function isHumanRequest(value: string) { return /\b(falar com (uma )?(pessoa|humano|atendente)|tem alguem humano|quero atendente)\b/.test(normalizeText(value)); }
+function isCancelRequest(value: string) { return /\b(n[aã]o quero mais|vou deixar|desisti|cancelar)\b/.test(normalizeText(value)); }
+function isPixHolderQuestion(value: string) { return /\b(nome (do|da|que)|favorecido|titular|banco)\b/.test(normalizeText(value)); }
+function detectUserIntent(value: string, hasMedia: boolean) {
+  if (hasMedia) return 'send_payment_proof';
+  if (isHumanRequest(value)) return 'human_request';
+  if (isCancelRequest(value)) return 'cancel';
+  if (isPixResendRequest(value)) return 'request_pix_resend';
+  if (isDeliveryQuestion(value)) return 'ask_deadline';
+  if (isPixHolderQuestion(value)) return 'ask_pix_holder';
+  if (/\b(pre[cç]o|quanto custa|valor|pacote)\b/.test(normalizeText(value))) return 'ask_price';
+  if (/\b(como funciona|como e|como é)\b/.test(normalizeText(value))) return 'ask_how_it_works';
+  return 'other';
+}
 function formatPrice(value: number | null) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 
-export function selectedPackageFromMessage(body: string, catalog: PackageSummary[]) {
-  if (!hasPurchaseIntent(body)) return undefined;
+export function selectedPackageFromMessage(body: string, catalog: PackageSummary[], previousAssistantMessage = '') {
   const message = normalizeText(body);
-  return catalog.find((item) => {
+  const findMentionedPackage = (text: string) => catalog.find((item) => {
     const count = item.imageCount;
     if (!count) return false;
     const countWords: Record<number, string> = { 2: 'duas', 5: 'cinco', 10: 'dez' };
     const countPattern = new RegExp(`\\b(${count}|${countWords[count] || ''})\\s*(fotos?|imagens?)?\\b`);
-    return countPattern.test(message) || message.includes(normalizeText(item.name));
+    return countPattern.test(text) || text.includes(normalizeText(item.name));
   });
+  if (hasPurchaseIntent(body)) return findMentionedPackage(message);
+  const isSimpleConfirmation = /^(sim|pode ser|fechado|vamos|quero esse|esse mesmo)[!.?\s]*$/.test(message);
+  if (!isSimpleConfirmation) return undefined;
+  const previous = normalizeText(previousAssistantMessage);
+  if (!/\b(quer seguir|quer fechar|qual pacote|pacote)\b/.test(previous)) return undefined;
+  return findMentionedPackage(previous);
 }
 
 function packageOfferMessage(catalog: PackageSummary[]) {
@@ -62,18 +81,18 @@ function routerReply(body: string, memory: Record<string, unknown>, suggestedRep
   const routerStep = Number(memory.routerStep || 0);
   if (routerStep === 0) {
     return {
-      reply: 'Sem problema 😊 Posso te ajudar de duas formas: criar um ensaio fotográfico com IA para uma ocasião especial, ou criar/melhorar o site de uma empresa. Qual dessas opções parece mais útil para você?',
+      reply: 'Sem problema 😊 Me conta um pouquinho do que você está procurando que eu te ajudo por aqui.',
       routerStep: 1,
     };
   }
   if (routerStep === 1) {
     return {
-      reply: 'Para facilitar: responda *FOTOS* se quiser um ensaio com IA ou *SITE* se quiser falar da presença online de uma empresa. Se for outro assunto, pode me dizer em uma frase o que você precisa.',
+      reply: 'Pode me dizer em uma frase o que você precisa? Assim consigo te orientar direitinho. 😊',
       routerStep: 2,
     };
   }
   return {
-    reply: 'Tudo bem. Me conta só qual resultado você gostaria de conseguir hoje — por exemplo, fotos para uma ocasião ou mais clientes para uma empresa — que eu encontro o melhor caminho para você.',
+    reply: 'Tudo bem. Quando souber o que precisa, pode me chamar por aqui que te ajudo. 😊',
     routerStep: 3,
   };
 }
@@ -81,7 +100,7 @@ function routerReply(body: string, memory: Record<string, unknown>, suggestedRep
 function photosPrompt(agent: typeof agents.$inferSelect, lead: typeof leads.$inferSelect, settings: typeof businessSettings.$inferSelect | undefined, catalog: unknown, portfolio: unknown, isFirstReply: boolean) {
   return `Você é ${agent.name}, atendente comercial de ensaios fotográficos com IA no WhatsApp. As regras abaixo têm prioridade sobre a personalidade.
 Personalidade: ${agent.personality}
-Data e hora atuais em Brasília: ${nowInBrazil()}. Etapa: ${lead.status || 'atendimento'}. Memória: ${JSON.stringify(safeMemory(lead.persistentMemory))}.
+Data e hora atuais em Brasília: ${nowInBrazil()}. Etapa: ${lead.conversationStage || lead.status || 'atendimento'}. Estado controlado pelo CRM: pacote=${lead.selectedPackageId || 'nenhum'}, quantidade=${lead.selectedQuantity || 'nenhuma'}, valor=${lead.selectedPrice || 'nenhum'}, Pix enviado=${lead.pixSent ? 'sim' : 'não'}, pagamento=${lead.paymentStatus}, humano=${lead.humanHandoff ? 'sim' : 'não'}. Memória: ${JSON.stringify(safeMemory(lead.persistentMemory))}.
 Pacotes autorizados: ${JSON.stringify(catalog)}. Portfólio: ${JSON.stringify(portfolio)}.
 Regras comerciais: ${settings?.salesInstructions || 'Seja breve, educado e conduza até a escolha de um pacote.'}
 Pix manual: chave=${settings?.pixKey || 'não configurada'}, favorecido=${settings?.pixRecipient || 'não configurado'}, banco=${settings?.pixInstitution || 'não configurado'}.
@@ -111,8 +130,8 @@ Retorne somente JSON: {"reply":"texto", "temperature":"frio|morno|quente", "next
 }
 
 async function classify(client: OpenAI, router: typeof agents.$inferSelect, body: string, history: Array<typeof messages.$inferSelect>) {
-  const prompt = `Você é ${router.name}, o Cérebro do atendimento. Identifique se a pessoa procura ensaio fotográfico com IA (photos), criação/melhoria de site (sites) ou se ainda não está claro/é outro assunto (general). Personalidade: ${router.personality}.
-Se ainda não estiver claro, conduza com naturalidade, considerando toda a conversa: não repita a mesma pergunta nem liste os serviços de modo robótico. Uma saudação simples pede uma pergunta acolhedora. Se a pessoa disser "não sei", "talvez" ou demonstrar indecisão, ajude-a a escolher com exemplos simples de resultado, como fotos para uma ocasião ou mais presença online para uma empresa. Em uma segunda indecisão, peça uma resposta curta como "FOTOS", "SITE" ou uma frase sobre a necessidade. Nunca fique em loop.
+  const prompt = `Você é ${router.name}, o Cérebro do atendimento. Identifique internamente se a pessoa procura ensaio fotográfico com IA (photos), criação/melhoria de site (sites) ou se ainda não está claro/é outro assunto (general). Personalidade: ${router.personality}.
+Nunca apresente um menu de produtos, não pergunte "fotos ou site" e não explique a transferência. Se ainda não estiver claro, responda apenas de modo acolhedor e genérico, como uma recepção curta; quando identificar o interesse, deixe o especialista continuar silenciosamente. Para leads de origem WhatsApp sem outro contexto, não ofereça sites espontaneamente.
 Se estiver claro, reply pode ser vazio porque o especialista responderá. Não explique o encaminhamento e não invente condições. Retorne somente JSON: {"reply":"texto", "intent":"general|photos|sites", "memoryUpdate":{}}.`;
   const previous = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
   const completion = await client.chat.completions.create({ model: router.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: router.responseTemperature ?? 0.3, messages: [{ role: 'system', content: prompt }, ...previous, { role: 'user', content: body || '[Imagem recebida]' }] });
@@ -161,7 +180,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   if (!agent && isSpecialistService(service)) {
     agent = activeAgents.find((item) => item.role === 'specialist' && item.serviceKey === service);
   }
-  if (!isSpecialistService(service) || !agent) {
+  if ((!isSpecialistService(service) || !agent) && !activeAgents.some((item) => item.role === 'router')) {
     const photoAgent = activeAgents.find((item) => item.role === 'specialist' && item.serviceKey === 'photos');
     if (photoAgent) {
       service = 'photos';
@@ -176,7 +195,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     const routed = await classify(client, router, messageBody, history);
     if (!isSpecialistService(routed.intent)) {
       const currentMemory = safeMemory(activeLead.persistentMemory);
-      const guided = routerReply(messageBody, currentMemory, routed.reply || 'Olá! Você procura um ensaio fotográfico com IA, a criação de um site ou outro serviço?');
+      const guided = routerReply(messageBody, currentMemory, routed.reply || 'Olá! Como posso te ajudar hoje?');
       const reply = guided.reply;
       await db.transaction(async (tx) => { await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply }); await tx.update(leads).set({ persistentMemory: JSON.stringify({ ...currentMemory, ...(routed.memoryUpdate || {}), routerStep: guided.routerStep }), updatedAt: new Date() }).where(eq(leads.id, activeLead.id)); });
       return [reply];
@@ -191,7 +210,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     await db.update(leads).set({ serviceKey: service, assignedAgentId: agent.id, updatedAt: new Date() }).where(eq(leads.id, activeLead.id));
     activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
   }
-  const catalog: PackageSummary[] = packages.map((item) => ({ name: item.name, description: item.description, price: item.price, imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays }));
+  const catalog: PackageSummary[] = packages.map((item) => ({ id: item.id, name: item.name, description: item.description, price: item.price, imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays }));
   const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), history.length <= 1) : sitesPrompt(agent, activeLead);
   const content: any = mediaData?.type === 'image' ? [{ type: 'text', text: messageBody || 'O cliente enviou esta imagem.' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } }] : messageBody;
   const ordered = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
@@ -203,8 +222,10 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   let nextStatus = allowed.includes(parsed.nextStatus || '') ? parsed.nextStatus! : activeLead.status || 'atendimento';
   const previousMemory = safeMemory(activeLead.persistentMemory);
   const memory = parsed.memoryUpdate && typeof parsed.memoryUpdate === 'object' ? { ...previousMemory, ...parsed.memoryUpdate } : previousMemory;
-  const selectedPackage = service === 'photos' ? selectedPackageFromMessage(messageBody, catalog) : undefined;
-  const hadPixSent = memory.pixSent === true;
+  const lastAssistantMessage = history.find((item) => item.role === 'assistant')?.content || '';
+  const selectedPackage = service === 'photos' ? selectedPackageFromMessage(messageBody, catalog, lastAssistantMessage) : undefined;
+  const userIntent = detectUserIntent(messageBody, Boolean(mediaData));
+  const hadPixSent = activeLead.pixSent;
   const resendRequested = isPixResendRequest(messageBody);
   if (selectedPackage) {
     memory.selectedPackageName = selectedPackage.name;
@@ -212,7 +233,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     memory.selectedPackageValue = selectedPackage.price || 0;
     if (!hadPixSent) nextStatus = 'aguardando_pix';
   }
-  const hasSelectedPackage = Boolean(memory.selectedPackageName);
+  const hasSelectedPackage = Boolean(selectedPackage || activeLead.packageConfirmed);
   if (service === 'photos' && nextStatus === 'aguardando_pix' && !hasSelectedPackage) {
     nextStatus = 'oferta';
     reply = packageOfferMessage(catalog);
@@ -234,7 +255,9 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   if (hadPixSent && !resendRequested) {
     reply = reply.replaceAll(pixKey, '').replace(/\s{2,}/g, ' ').trim() || 'A chave Pix já foi enviada acima. Se precisar que eu a reenvie, é só me pedir. 😊';
   }
-  const outgoingMessages = shouldSendPix
+  const outgoingMessages = shouldSendPix && hadPixSent && resendRequested
+    ? [pixKey]
+    : shouldSendPix
     ? [
       'Que bom que você gostou! 😊 Vamos caprichar no seu ensaio. Logo abaixo vou te mandar a chave Pix para você copiar com facilidade. Depois do pagamento, envie o comprovante para conferência manual.',
       pixKey,
@@ -242,10 +265,16 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     ]
     : [reply];
   await db.transaction(async (tx) => {
-    const requiresHuman = nextStatus === 'comprovante_recebido' || parsed.handoffRequested === true;
+    const proofReceived = nextStatus === 'comprovante_recebido';
+    const requiresHuman = proofReceived || parsed.handoffRequested === true || isHumanRequest(messageBody);
+    const cancelled = isCancelRequest(messageBody);
+    const selectedPackageId = selectedPackage?.id || activeLead.selectedPackageId;
+    const selectedQuantity = selectedPackage?.imageCount || activeLead.selectedQuantity;
+    const selectedPrice = selectedPackage?.price || activeLead.selectedPrice;
+    const stage = cancelled ? 'closed' : proofReceived ? 'awaiting_manual_confirmation' : requiresHuman ? 'human_handoff' : shouldSendPix ? 'awaiting_payment' : selectedPackage ? 'package_selected' : nextStatus === 'oferta' ? 'awaiting_package_selection' : activeLead.conversationStage || 'qualifying';
     await tx.insert(messages).values(outgoingMessages.map((content) => ({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant' as const, content })));
-    await tx.update(leads).set({ status: nextStatus, temperature, persistentMemory: JSON.stringify(memory), aiEnabled: requiresHuman ? false : activeLead.aiEnabled, handoffAt: requiresHuman ? new Date() : activeLead.handoffAt, estimatedValue: selectedPackage?.price || activeLead.estimatedValue, updatedAt: new Date() }).where(and(eq(leads.id, activeLead.id), eq(leads.userId, userId)));
-    await tx.insert(activities).values({ id: randomUUID(), userId, leadId: activeLead.id, type: 'whatsapp_message', content: `Cliente: ${messageBody || '[Imagem]'}\nIA: ${outgoingMessages.join('\n')}`, metadata: JSON.stringify({ fromStatus: activeLead.status, toStatus: nextStatus, service }) });
+    await tx.update(leads).set({ status: proofReceived ? 'comprovante_recebido' : nextStatus, temperature, persistentMemory: JSON.stringify(memory), aiEnabled: requiresHuman || cancelled ? false : activeLead.aiEnabled, handoffAt: requiresHuman ? new Date() : activeLead.handoffAt, estimatedValue: selectedPrice || activeLead.estimatedValue, conversationStage: stage, selectedPackageId, selectedQuantity, selectedPrice, packageConfirmed: selectedPackage ? true : activeLead.packageConfirmed, paymentMethod: shouldSendPix ? 'pix' : activeLead.paymentMethod, paymentStatus: proofReceived ? 'pending_review' : shouldSendPix ? 'pending' : activeLead.paymentStatus, pixSent: shouldSendPix ? true : activeLead.pixSent, pixSentAt: shouldSendPix && !hadPixSent ? new Date() : activeLead.pixSentAt, pixSendCount: shouldSendPix ? (activeLead.pixSendCount || 0) + 1 : activeLead.pixSendCount, paymentProofReceived: proofReceived || activeLead.paymentProofReceived, awaitingManualPaymentReview: proofReceived || activeLead.awaitingManualPaymentReview, lastUserIntent: userIntent, lastAiAction: shouldSendPix ? (hadPixSent ? 'resend_pix' : 'send_pix') : proofReceived ? 'request_manual_payment_review' : parsed.handoffRequested ? 'human_handoff' : 'reply', humanHandoff: requiresHuman || activeLead.humanHandoff, updatedAt: new Date() }).where(and(eq(leads.id, activeLead.id), eq(leads.userId, userId)));
+    await tx.insert(activities).values({ id: randomUUID(), userId, leadId: activeLead.id, type: 'whatsapp_message', content: `Cliente: ${messageBody || '[Imagem]'}\nIA: ${outgoingMessages.join('\n')}`, metadata: JSON.stringify({ stageBefore: activeLead.conversationStage, stageAfter: stage, userIntent, action: shouldSendPix ? (hadPixSent ? 'resend_pix' : 'send_pix') : 'reply', selectedPackage: selectedPackageId, paymentStatus: proofReceived ? 'pending_review' : shouldSendPix ? 'pending' : activeLead.paymentStatus, service }) });
   });
   return outgoingMessages;
 }

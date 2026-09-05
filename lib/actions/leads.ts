@@ -56,7 +56,7 @@ export async function updateLeadStatus(leadId: string, newStatus: string) {
   await db.update(leads).set({
     status: newStatus,
     updatedAt: new Date(),
-    ...(paid ? { paidAt: new Date(), aiEnabled: false, handoffAt: new Date() } : {}),
+    ...(paid ? { paidAt: new Date(), aiEnabled: false, handoffAt: new Date(), paymentStatus: 'confirmed', conversationStage: 'payment_confirmed', awaitingManualPaymentReview: false } : {}),
   }).where(and(eq(leads.id, leadId), eq(leads.userId, dbUser.id)));
   await db.insert(activities).values({
     id: randomUUID(), userId: dbUser.id, leadId, type: 'status_mudou',
@@ -79,6 +79,8 @@ export async function setLeadAutomation(leadId: string, enabled: boolean) {
   await db.update(leads).set({
     aiEnabled: enabled,
     handoffAt: enabled ? null : new Date(),
+    humanHandoff: !enabled,
+    conversationStage: enabled ? lead.conversationStage : 'human_handoff',
     updatedAt: new Date(),
   }).where(and(eq(leads.id, leadId), eq(leads.userId, dbUser.id)));
   await db.insert(activities).values({

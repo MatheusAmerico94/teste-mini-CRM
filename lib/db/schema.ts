@@ -34,6 +34,21 @@ export const leads = pgTable('leads', {
     persistentMemory: text('persistent_memory'), // JSON string with user facts
     serviceKey: text('service_key').notNull().default('general'), // general, photos, sites
     assignedAgentId: text('assigned_agent_id'),
+    conversationStage: text('conversation_stage').notNull().default('new_lead'),
+    selectedPackageId: text('selected_package_id'),
+    selectedQuantity: integer('selected_quantity'),
+    selectedPrice: doublePrecision('selected_price'),
+    packageConfirmed: boolean('package_confirmed').notNull().default(false),
+    paymentMethod: text('payment_method'),
+    paymentStatus: text('payment_status').notNull().default('not_started'),
+    pixSent: boolean('pix_sent').notNull().default(false),
+    pixSentAt: timestamp('pix_sent_at'),
+    pixSendCount: integer('pix_send_count').notNull().default(0),
+    paymentProofReceived: boolean('payment_proof_received').notNull().default(false),
+    awaitingManualPaymentReview: boolean('awaiting_manual_payment_review').notNull().default(false),
+    lastUserIntent: text('last_user_intent'),
+    lastAiAction: text('last_ai_action'),
+    humanHandoff: boolean('human_handoff').notNull().default(false),
     deletedAt: timestamp('deleted_at'),
 });
 

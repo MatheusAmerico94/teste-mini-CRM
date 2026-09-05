@@ -231,6 +231,11 @@ export function WhatsAppChatClient({ initialLeads, initialSelectedLeadId }: { in
                                 <div>
                                     <h3 className="font-medium text-slate-900 dark:text-slate-100">{selectedLead.name && selectedLead.name !== selectedLead.phone ? selectedLead.name : displayPhone(selectedLead.phone)}</h3>
                                     <p className="text-xs text-muted-foreground">{displayPhone(selectedLead.phone)}</p>
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                        <span className="text-[10px] rounded bg-slate-200 px-1.5 py-0.5 text-slate-600 dark:bg-slate-700 dark:text-slate-200">{selectedLead.conversationStage || 'qualificando'}</span>
+                                        {selectedLead.selectedQuantity ? <span className="text-[10px] rounded bg-slate-200 px-1.5 py-0.5 text-slate-600 dark:bg-slate-700 dark:text-slate-200">{selectedLead.selectedQuantity} fotos · R$ {Number(selectedLead.selectedPrice || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span> : null}
+                                        {selectedLead.pixSent ? <span className="text-[10px] rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">Pix enviado</span> : null}
+                                    </div>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
