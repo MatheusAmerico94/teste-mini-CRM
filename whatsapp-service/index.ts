@@ -138,18 +138,21 @@ async function processIncomingBatch(userId: string, currentSocket: any, incoming
 
   const ids = incoming.map((msg) => msg.key.id).filter(Boolean);
   const externalId = ids.length ? `batch:${ids.join(':')}` : undefined;
-  const reply = await processIncomingMessage(userId, phone, text, mediaData, externalId, {
+  const replies = await processIncomingMessage(userId, phone, text, mediaData, externalId, {
     name: contactName,
     avatarUrl,
     legacyNumber,
   });
-  if (!reply || sock !== currentSocket) return;
+  if (!replies || sock !== currentSocket) return;
   try {
     await currentSocket.readMessages(incoming.map((msg) => msg.key));
   } catch (error) {
     logger.warn({ err: error, messageIds: ids }, 'falha ao confirmar leitura');
   }
-  await currentSocket.sendMessage(jid, { text: reply });
+  for (const reply of replies) {
+    if (sock !== currentSocket) return;
+    await currentSocket.sendMessage(jid, { text: reply });
+  }
 }
 
 function queueIncomingMessage(userId: string, currentSocket: any, msg: any) {

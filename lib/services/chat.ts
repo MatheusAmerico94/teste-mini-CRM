@@ -60,7 +60,7 @@ Regras obrigatórias:
 - Nunca invente preço, pacote, desconto, prazo, URL, promoção, urgência, prova social ou dado Pix. Use somente os pacotes cadastrados.
 - Entenda a ocasião e faça no máximo uma pergunta por resposta. Podemos criar qualquer tema ou cenário com IA; não negue um tema só por não estar no portfólio.
 - Se houver pressa, ofereça prioridade por R$ 10 somente após aceite explícito, sem prometer prazo exato.
-- Só envie a chave Pix depois de o cliente escolher claramente um pacote. Nunca confirme pagamento, início de produção ou entrega antes de conferência humana.
+- Só envie a chave Pix depois de o cliente escolher claramente um pacote. Quando for enviar Pix, escreva no reply somente a explicação curta do pagamento: o sistema enviará a chave em uma segunda mensagem separada para facilitar a cópia. Nunca confirme pagamento, início de produção ou entrega antes de conferência humana.
 - Ao receber imagem que possa ser comprovante, avalie visualmente favorecido, chave, valor, data/hora e se parece realizado ou agendado. "Comprovante de agendamento", "Pix agendado", data futura ou pendente são sinais de agendamento. Mesmo se parecer realizado, diga apenas que recebeu e que haverá conferência manual; use nextStatus="comprovante_recebido" e handoffRequested=true.
 - Não exponha dados bancários e não trate aparência ou ID como confirmação definitiva.
 - Para objeção de preço, reconheça e ofereça pacote menor se existir; não pressione. Se pedir humano ou ficar irritado, use handoffRequested=true.
@@ -145,14 +145,14 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
       const guided = routerReply(messageBody, currentMemory, routed.reply || 'Olá! Você procura um ensaio fotográfico com IA, a criação de um site ou outro serviço?');
       const reply = guided.reply;
       await db.transaction(async (tx) => { await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply }); await tx.update(leads).set({ persistentMemory: JSON.stringify({ ...currentMemory, ...(routed.memoryUpdate || {}), routerStep: guided.routerStep }), updatedAt: new Date() }).where(eq(leads.id, activeLead.id)); });
-      return reply;
+      return [reply];
     }
     service = routed.intent;
     agent = activeAgents.find((item) => item.role === 'specialist' && item.serviceKey === service);
     if (!agent) {
       const reply = 'Entendi. Vou pedir para uma pessoa continuar esse atendimento com você.';
       await db.transaction(async (tx) => { await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply }); await tx.update(leads).set({ serviceKey: service, aiEnabled: false, handoffAt: new Date(), updatedAt: new Date() }).where(eq(leads.id, activeLead.id)); });
-      return reply;
+      return [reply];
     }
     await db.update(leads).set({ serviceKey: service, assignedAgentId: agent.id, updatedAt: new Date() }).where(eq(leads.id, activeLead.id));
     activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
@@ -168,11 +168,17 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   const allowed = service === 'photos' ? ['atendimento', 'oferta', 'aguardando_pix', 'comprovante_recebido'] : ['atendimento', 'oferta'];
   const nextStatus = allowed.includes(parsed.nextStatus || '') ? parsed.nextStatus! : activeLead.status || 'atendimento';
   const memory = parsed.memoryUpdate && typeof parsed.memoryUpdate === 'object' ? { ...safeMemory(activeLead.persistentMemory), ...parsed.memoryUpdate } : safeMemory(activeLead.persistentMemory);
+  const outgoingMessages = service === 'photos' && nextStatus === 'aguardando_pix' && settings?.pixKey
+    ? [
+      'Perfeito! 😊 Para concluir, faça o pagamento por Pix no valor combinado. A chave está na próxima mensagem para você copiar facilmente. Depois, envie o comprovante para conferência manual.',
+      settings.pixKey,
+    ]
+    : [reply];
   await db.transaction(async (tx) => {
     const requiresHuman = nextStatus === 'comprovante_recebido' || parsed.handoffRequested === true;
-    await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply });
+    await tx.insert(messages).values(outgoingMessages.map((content) => ({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant' as const, content })));
     await tx.update(leads).set({ status: nextStatus, temperature, persistentMemory: JSON.stringify(memory), aiEnabled: requiresHuman ? false : activeLead.aiEnabled, handoffAt: requiresHuman ? new Date() : activeLead.handoffAt, estimatedValue: service === 'photos' && nextStatus === 'aguardando_pix' && catalog.length === 1 ? catalog[0].price : activeLead.estimatedValue, updatedAt: new Date() }).where(and(eq(leads.id, activeLead.id), eq(leads.userId, userId)));
-    await tx.insert(activities).values({ id: randomUUID(), userId, leadId: activeLead.id, type: 'whatsapp_message', content: `Cliente: ${messageBody || '[Imagem]'}\nIA: ${reply}`, metadata: JSON.stringify({ fromStatus: activeLead.status, toStatus: nextStatus, service }) });
+    await tx.insert(activities).values({ id: randomUUID(), userId, leadId: activeLead.id, type: 'whatsapp_message', content: `Cliente: ${messageBody || '[Imagem]'}\nIA: ${outgoingMessages.join('\n')}`, metadata: JSON.stringify({ fromStatus: activeLead.status, toStatus: nextStatus, service }) });
   });
-  return reply;
+  return outgoingMessages;
 }
