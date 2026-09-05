@@ -281,7 +281,12 @@ async function startSocket(requestedUserId?: string) {
   }
 }
 
-app.get('/health', (_req, res) => res.json({ ok: true, connected: Boolean(sock?.user), starting }));
+app.get('/health', (_req, res) => res.json({
+  ok: true,
+  connected: Boolean(sock?.user),
+  starting,
+  sessionStorage: sessionDirectory.startsWith('/tmp/') ? 'temporary' : 'custom',
+}));
 app.post('/connect', authorize, async (req, res) => {
   try { await startSocket(req.body.userId); res.json({ success: true }); }
   catch (error) { res.status(500).json({ error: error instanceof Error ? error.message : 'Falha ao conectar' }); }
