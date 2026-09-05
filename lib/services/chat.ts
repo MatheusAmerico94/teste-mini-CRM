@@ -11,6 +11,7 @@ type MediaData = { type: 'image' | 'audio'; base64: string; mimeType?: string } 
 type ContactData = { name?: string; avatarUrl?: string; legacyNumber?: string };
 type AgentResult = { reply: string; temperature: 'frio' | 'morno' | 'quente'; nextStatus?: 'atendimento' | 'oferta' | 'aguardando_pix' | 'comprovante_recebido'; memoryUpdate?: Record<string, string | number | boolean>; handoffRequested?: boolean };
 type RouterResult = { reply: string; intent: ServiceKey; memoryUpdate?: Record<string, string | number | boolean> };
+export type PackageSummary = { name: string; description: string | null; price: number | null; imageCount: number | null; deliveryHours: number | null; deliveryDays: number | null };
 
 function safeMemory(value: string | null) { try { return value ? JSON.parse(value) : {}; } catch { return {}; } }
 function nowInBrazil() { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', timeStyle: 'short' }).format(new Date()); }
@@ -19,6 +20,37 @@ function greetingInBrazil() {
   return hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
 }
 function findApiKey(list: Array<typeof agents.$inferSelect>) { return list.map((agent) => decryptSecret(agent.apiKey)).find(Boolean) || process.env.OPENAI_API_KEY; }
+
+function normalizeText(value: string) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function hasPurchaseIntent(value: string) { return /\b(quero|vou querer|fecho|fechar|escolho|escolher|prefiro|fico com|vamos com|pode ser)\b/.test(normalizeText(value)); }
+function isPixResendRequest(value: string) { return /\b(reenvia|reenvie|reenviar|manda.*(pix|chave).*de novo|pix.*de novo|chave pix)\b/.test(normalizeText(value)); }
+function isDeliveryQuestion(value: string) { return /\b(prazo|entrega|demora|quanto tempo|quando fica pronto|quando entrega)\b/.test(normalizeText(value)); }
+function formatPrice(value: number | null) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+
+export function selectedPackageFromMessage(body: string, catalog: PackageSummary[]) {
+  if (!hasPurchaseIntent(body)) return undefined;
+  const message = normalizeText(body);
+  return catalog.find((item) => {
+    const count = item.imageCount;
+    if (!count) return false;
+    const countWords: Record<number, string> = { 2: 'duas', 5: 'cinco', 10: 'dez' };
+    const countPattern = new RegExp(`\\b(${count}|${countWords[count] || ''})\\s*(fotos?|imagens?)?\\b`);
+    return countPattern.test(message) || message.includes(normalizeText(item.name));
+  });
+}
+
+function packageOfferMessage(catalog: PackageSummary[]) {
+  const options = catalog.map((item) => `${item.imageCount} fotos por ${formatPrice(item.price)}`).join(', ');
+  return `Que bom que você gostou! 😊 Antes de eu te passar o Pix, escolha um pacote: ${options}. Qual você prefere?`;
+}
+
+function deliveryMessage(selectedPackage: PackageSummary | undefined, catalog: PackageSummary[]) {
+  const packageForDelivery = selectedPackage || catalog.find((item) => item.deliveryHours != null) || catalog[0];
+  if (!packageForDelivery) return 'Vou confirmar o prazo de entrega com a equipe e te aviso por aqui.';
+  if (packageForDelivery.deliveryHours) return `O prazo de entrega é de até ${packageForDelivery.deliveryHours} horas após a confirmação manual do pagamento. 😊`;
+  if (packageForDelivery.deliveryDays != null) return `O prazo de entrega é de até ${packageForDelivery.deliveryDays} dias após a confirmação manual do pagamento. 😊`;
+  return 'Vou confirmar o prazo de entrega com a equipe e te aviso por aqui.';
+}
 
 function isIndecisiveReply(value: string) {
   return /^(n[ãa]o sei|sei l[áa]|n[ãa]o tenho certeza|talvez|qualquer coisa)[!.?,\s]*$/i.test(value.trim());
@@ -61,6 +93,8 @@ Regras obrigatórias:
 - Entenda a ocasião e faça no máximo uma pergunta por resposta. Podemos criar qualquer tema ou cenário com IA; não negue um tema só por não estar no portfólio.
 - Se houver pressa, ofereça prioridade por R$ 10 somente após aceite explícito, sem prometer prazo exato.
 - Só envie a chave Pix depois de o cliente escolher claramente um pacote. Quando for enviar Pix, escreva no reply somente a explicação curta do pagamento: o sistema enviará a chave em uma segunda mensagem separada para facilitar a cópia. Nunca confirme pagamento, início de produção ou entrega antes de conferência humana.
+- "Vou querer", "perfeito" ou "sim" não autorizam Pix se o cliente ainda não informou qual pacote escolheu. Pergunte qual pacote ele quer.
+- O prazo de cada pacote está no catálogo. Ao perguntarem sobre prazo ou entrega, use o prazo cadastrado e diga que ele começa após a confirmação manual do pagamento.
 - Ao receber imagem que possa ser comprovante, avalie visualmente favorecido, chave, valor, data/hora e se parece realizado ou agendado. "Comprovante de agendamento", "Pix agendado", data futura ou pendente são sinais de agendamento. Mesmo se parecer realizado, diga apenas que recebeu e que haverá conferência manual; use nextStatus="comprovante_recebido" e handoffRequested=true.
 - Não exponha dados bancários e não trate aparência ou ID como confirmação definitiva.
 - Para objeção de preço, reconheça e ofereça pacote menor se existir; não pressione. Se pedir humano ou ficar irritado, use handoffRequested=true.
@@ -157,28 +191,60 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     await db.update(leads).set({ serviceKey: service, assignedAgentId: agent.id, updatedAt: new Date() }).where(eq(leads.id, activeLead.id));
     activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
   }
-  const catalog = packages.map((item) => ({ name: item.name, description: item.description, price: item.price, imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays }));
+  const catalog: PackageSummary[] = packages.map((item) => ({ name: item.name, description: item.description, price: item.price, imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays }));
   const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), history.length <= 1) : sitesPrompt(agent, activeLead);
   const content: any = mediaData?.type === 'image' ? [{ type: 'text', text: messageBody || 'O cliente enviou esta imagem.' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } }] : messageBody;
   const ordered = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
   const completion = await client.chat.completions.create({ model: agent.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: agent.responseTemperature ?? 0.7, messages: [{ role: 'system', content: prompt }, ...ordered, { role: 'user', content }] });
   const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}') as Partial<AgentResult>;
-  const reply = String(parsed.reply || '').trim(); if (!reply) throw new Error('A OpenAI retornou uma resposta vazia');
+  let reply = String(parsed.reply || '').trim(); if (!reply) throw new Error('A OpenAI retornou uma resposta vazia');
   const temperature = ['frio', 'morno', 'quente'].includes(parsed.temperature || '') ? parsed.temperature! : activeLead.temperature || 'frio';
   const allowed = service === 'photos' ? ['atendimento', 'oferta', 'aguardando_pix', 'comprovante_recebido'] : ['atendimento', 'oferta'];
-  const nextStatus = allowed.includes(parsed.nextStatus || '') ? parsed.nextStatus! : activeLead.status || 'atendimento';
-  const memory = parsed.memoryUpdate && typeof parsed.memoryUpdate === 'object' ? { ...safeMemory(activeLead.persistentMemory), ...parsed.memoryUpdate } : safeMemory(activeLead.persistentMemory);
-  const outgoingMessages = service === 'photos' && nextStatus === 'aguardando_pix' && settings?.pixKey
+  let nextStatus = allowed.includes(parsed.nextStatus || '') ? parsed.nextStatus! : activeLead.status || 'atendimento';
+  const previousMemory = safeMemory(activeLead.persistentMemory);
+  const memory = parsed.memoryUpdate && typeof parsed.memoryUpdate === 'object' ? { ...previousMemory, ...parsed.memoryUpdate } : previousMemory;
+  const selectedPackage = service === 'photos' ? selectedPackageFromMessage(messageBody, catalog) : undefined;
+  const hadPixSent = memory.pixSent === true;
+  const resendRequested = isPixResendRequest(messageBody);
+  if (selectedPackage) {
+    memory.selectedPackageName = selectedPackage.name;
+    memory.selectedPackageImages = selectedPackage.imageCount || 0;
+    memory.selectedPackageValue = selectedPackage.price || 0;
+    if (!hadPixSent) nextStatus = 'aguardando_pix';
+  }
+  const hasSelectedPackage = Boolean(memory.selectedPackageName);
+  if (service === 'photos' && nextStatus === 'aguardando_pix' && !hasSelectedPackage) {
+    nextStatus = 'oferta';
+    reply = packageOfferMessage(catalog);
+  }
+  if (service === 'photos' && isDeliveryQuestion(messageBody)) {
+    nextStatus = 'oferta';
+    reply = deliveryMessage(selectedPackage || catalog.find((item) => item.name === memory.selectedPackageName), catalog);
+  }
+  const pixKey = settings?.pixKey || '';
+  const paymentRecipientDetails = [
+    settings?.pixRecipient ? `Favorecido: ${settings.pixRecipient}` : '',
+    settings?.pixInstitution ? `Banco: ${settings.pixInstitution}` : '',
+  ].filter(Boolean).join('\n') || 'Confira os dados do favorecido no seu aplicativo antes de concluir o pagamento.';
+  const shouldSendPix = service === 'photos' && nextStatus === 'aguardando_pix' && Boolean(pixKey) && hasSelectedPackage && (!hadPixSent || resendRequested);
+  if (shouldSendPix) {
+    memory.pixSent = true;
+    memory.saleStatus = 'aguardando_pagamento';
+  }
+  if (hadPixSent && !resendRequested) {
+    reply = reply.replaceAll(pixKey, '').replace(/\s{2,}/g, ' ').trim() || 'A chave Pix já foi enviada acima. Se precisar que eu a reenvie, é só me pedir. 😊';
+  }
+  const outgoingMessages = shouldSendPix
     ? [
       'Que bom que você gostou! 😊 Vamos caprichar no seu ensaio. Logo abaixo vou te mandar a chave Pix para você copiar com facilidade. Depois do pagamento, envie o comprovante para conferência manual.',
-      settings.pixKey,
-      [settings.pixRecipient && `Favorecido: ${settings.pixRecipient}`, settings.pixInstitution && `Banco: ${settings.pixInstitution}`].filter(Boolean).join('\n') || 'Confira os dados do favorecido no seu aplicativo antes de concluir o pagamento.',
+      pixKey,
+      paymentRecipientDetails,
     ]
     : [reply];
   await db.transaction(async (tx) => {
     const requiresHuman = nextStatus === 'comprovante_recebido' || parsed.handoffRequested === true;
     await tx.insert(messages).values(outgoingMessages.map((content) => ({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant' as const, content })));
-    await tx.update(leads).set({ status: nextStatus, temperature, persistentMemory: JSON.stringify(memory), aiEnabled: requiresHuman ? false : activeLead.aiEnabled, handoffAt: requiresHuman ? new Date() : activeLead.handoffAt, estimatedValue: service === 'photos' && nextStatus === 'aguardando_pix' && catalog.length === 1 ? catalog[0].price : activeLead.estimatedValue, updatedAt: new Date() }).where(and(eq(leads.id, activeLead.id), eq(leads.userId, userId)));
+    await tx.update(leads).set({ status: nextStatus, temperature, persistentMemory: JSON.stringify(memory), aiEnabled: requiresHuman ? false : activeLead.aiEnabled, handoffAt: requiresHuman ? new Date() : activeLead.handoffAt, estimatedValue: selectedPackage?.price || activeLead.estimatedValue, updatedAt: new Date() }).where(and(eq(leads.id, activeLead.id), eq(leads.userId, userId)));
     await tx.insert(activities).values({ id: randomUUID(), userId, leadId: activeLead.id, type: 'whatsapp_message', content: `Cliente: ${messageBody || '[Imagem]'}\nIA: ${outgoingMessages.join('\n')}`, metadata: JSON.stringify({ fromStatus: activeLead.status, toStatus: nextStatus, service }) });
   });
   return outgoingMessages;

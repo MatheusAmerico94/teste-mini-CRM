@@ -4,6 +4,7 @@ import { AUTOMATION_BLOCKED_STATUSES, isLeadStatus, LEAD_STATUSES } from '../lib
 import { decryptSecret, encryptSecret, maskSecret } from '../lib/security/crypto';
 import { agentSchema, packageSchema } from '../lib/validation';
 import { isSpecialistService, normalizeServiceKey } from '../lib/services/routing';
+import { selectedPackageFromMessage, type PackageSummary } from '../lib/services/chat';
 
 test('pipeline contém as etapas comerciais na ordem esperada', () => {
   assert.deepEqual(LEAD_STATUSES.map(({ id }) => id), [
@@ -41,4 +42,10 @@ test('agente aceita instruções de até 40 mil caracteres', () => {
   const input = { name: 'Laura', personality: 'a'.repeat(40_000), model: 'gpt-4o-mini' };
   assert.equal(agentSchema.safeParse(input).success, true);
   assert.equal(agentSchema.safeParse({ ...input, personality: 'a'.repeat(40_001) }).success, false);
+});
+
+test('Pix só é liberado após escolha explícita de pacote', () => {
+  const packages: PackageSummary[] = [{ name: '10 fotos', description: null, price: 29.9, imageCount: 10, deliveryHours: 2, deliveryDays: 0 }];
+  assert.equal(selectedPackageFromMessage('Perfeito, vou querer', packages), undefined);
+  assert.equal(selectedPackageFromMessage('Vou querer o pacote de 10 fotos', packages)?.name, '10 fotos');
 });
