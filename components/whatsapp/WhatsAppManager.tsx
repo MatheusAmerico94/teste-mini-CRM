@@ -14,14 +14,22 @@ export function WhatsAppManager() {
     const [error, setError] = useState('');
     const [isRefreshingQr, setIsRefreshingQr] = useState(false);
     const handleConnect = async () => {
+        setIsRefreshingQr(true);
         setStatus('loading');
         try {
             setError('');
             // Uma sessão expirada pode impedir o Baileys de emitir outro QR. Reiniciar
             // a sessão garante que o próximo vínculo sempre receba um código novo.
             await refreshWhatsAppQr();
-        } catch (e) { setError(e instanceof Error ? e.message : 'Falha ao gerar QR Code'); }
-        await fetchStatus();
+            // O serviço da Render pode levar alguns segundos para receber o QR do WhatsApp.
+            // A consulta abaixo mostra imediatamente qualquer código que já tenha sido gerado.
+            await fetchStatus();
+        } catch (e) {
+            setStatus('disconnected');
+            setError(e instanceof Error ? e.message : 'Falha ao gerar QR Code');
+        } finally {
+            setIsRefreshingQr(false);
+        }
     };
 
     const fetchStatus = async () => {
@@ -30,7 +38,7 @@ export function WhatsAppManager() {
             if (conn) {
                 setStatus(conn.status as any);
                 setQrCode(conn.qrCode);
-                if (conn.lastError) setError(conn.lastError);
+                if (conn.lastError) setError(previous => previous || conn.lastError || '');
             } else {
                 setStatus('disconnected');
             }
@@ -111,8 +119,9 @@ export function WhatsAppManager() {
                             <p className="text-sm text-muted-foreground mb-6">
                                 O QR Code será gerado assim que o servidor iniciar o cliente do WhatsApp. Atualize a página ou aguarde.
                             </p>
-                            <Button onClick={handleConnect} size="lg" className="bg-primary hover:bg-primary/90">
-                                <RefreshCcw className="mr-2 h-4 w-4" /> Gerar novo QR Code
+                            <Button onClick={handleConnect} size="lg" disabled={isRefreshingQr} className="bg-primary hover:bg-primary/90">
+                                <RefreshCcw className={`mr-2 h-4 w-4 ${isRefreshingQr ? 'animate-spin' : ''}`} />
+                                {isRefreshingQr ? 'Gerando novo código...' : 'Gerar novo QR Code'}
                             </Button>
                             {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
                         </div>

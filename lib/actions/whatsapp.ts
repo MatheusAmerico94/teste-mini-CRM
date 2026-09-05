@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { leads, messages, whatsappConnections } from '@/lib/db/schema';
 import { getDbUser } from './users';
 import { and, eq } from 'drizzle-orm';
-import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
+import { unstable_noStore as noStore } from 'next/cache';
 import { randomUUID } from 'crypto';
 
 async function callWorker(path: string, body: Record<string, unknown> = {}) {
@@ -34,7 +34,6 @@ export async function getConnectionStatus() {
 export async function connectWhatsApp() {
   const dbUser = await getDbUser();
   await callWorker('/connect', { userId: dbUser.id });
-  revalidatePath('/dashboard/whatsapp');
   return { success: true };
 }
 
@@ -43,14 +42,12 @@ export async function disconnectWhatsApp() {
   await callWorker('/disconnect', { userId: dbUser.id });
   await db.update(whatsappConnections).set({ status: 'disconnected', qrCode: null, updatedAt: new Date() })
     .where(eq(whatsappConnections.userId, dbUser.id));
-  revalidatePath('/dashboard/whatsapp');
   return { success: true };
 }
 
 export async function refreshWhatsAppQr() {
   const dbUser = await getDbUser();
   await callWorker('/refresh-qr', { userId: dbUser.id });
-  revalidatePath('/dashboard/whatsapp');
   return { success: true };
 }
 
@@ -60,6 +57,5 @@ export async function sendManualMessage(leadId: string, content: string) {
   if (!lead?.phone || !content.trim()) throw new Error('Lead ou mensagem inválida');
   const result = await callWorker('/send', { userId: dbUser.id, phone: lead.phone, message: content.trim() });
   await db.insert(messages).values({ id: randomUUID(), userId: dbUser.id, leadId, role: 'assistant', content: content.trim(), externalId: result.messageId || null });
-  revalidatePath('/dashboard/conversas');
   return { success: true };
 }
