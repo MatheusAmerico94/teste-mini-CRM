@@ -23,7 +23,15 @@ function findApiKey(list: Array<typeof agents.$inferSelect>) { return list.map((
 
 function normalizeText(value: string) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
 function hasPurchaseIntent(value: string) { return /\b(quero|vou querer|fecho|fechar|escolho|escolher|prefiro|fico com|vamos com|pode ser)\b/.test(normalizeText(value)); }
-function isPixResendRequest(value: string) { return /\b(reenvia|reenvie|reenviar|manda.*(pix|chave).*de novo|pix.*de novo|chave pix)\b/.test(normalizeText(value)); }
+export function isPixResendRequest(value: string) {
+  const text = normalizeText(value);
+  return [
+    /\b(manda|me manda|manda me|envia|envie|reenvia|reenvie|reenviar|passa|me passa).{0,32}\b(novamente|de novo|a chave|so a chave|so ela|pix)\b/,
+    /\b(manda|envia|passa).{0,24}\b(chave|pix).{0,24}\b(de novo|novamente)\b/,
+    /\b(reenvia|reenvie|reenviar)\b/,
+    /\b(qual era a chave|perdi a chave|nao consigo copiar|nao da pra copiar|pode reenviar)\b/,
+  ].some((pattern) => pattern.test(text));
+}
 function isDeliveryQuestion(value: string) { return /\b(prazo|entrega|demora|quanto tempo|quando fica pronto|quando entrega)\b/.test(normalizeText(value)); }
 function isHumanRequest(value: string) { return /\b(falar com (uma )?(pessoa|humano|atendente)|tem alguem humano|quero atendente)\b/.test(normalizeText(value)); }
 function isCancelRequest(value: string) { return /\b(n[aã]o quero mais|vou deixar|desisti|cancelar)\b/.test(normalizeText(value)); }
@@ -61,6 +69,14 @@ export function selectedPackageFromMessage(body: string, catalog: PackageSummary
 function packageOfferMessage(catalog: PackageSummary[]) {
   const options = catalog.map((item) => `${item.imageCount} fotos por ${formatPrice(item.price)}`).join(', ');
   return `Que bom que você gostou! 😊 Antes de eu te passar o Pix, escolha um pacote: ${options}. Qual você prefere?`;
+}
+
+function packagePixConfirmationMessage(selectedPackage: PackageSummary) {
+  return `Fechado. São ${selectedPackage.imageCount} fotos por ${formatPrice(selectedPackage.price)}. Vou te mandar a chave separada.`;
+}
+
+function packageUpdatedAfterPixMessage(selectedPackage: PackageSummary) {
+  return `Fechado. Atualizei para ${selectedPackage.imageCount} fotos por ${formatPrice(selectedPackage.price)}. A chave Pix continua a mesma que te mandei acima. Se quiser, posso reenviar separada.`;
 }
 
 function deliveryMessage(selectedPackage: PackageSummary | undefined, catalog: PackageSummary[]) {
@@ -113,6 +129,7 @@ Regras obrigatórias:
 - Se houver pressa, ofereça prioridade por R$ 10 somente após aceite explícito, sem prometer prazo exato.
 - Só envie a chave Pix depois de o cliente escolher claramente um pacote. Quando for enviar Pix, escreva no reply somente a explicação curta do pagamento: o sistema enviará a chave em uma segunda mensagem separada para facilitar a cópia. Nunca confirme pagamento, início de produção ou entrega antes de conferência humana.
 - "Vou querer", "perfeito" ou "sim" não autorizam Pix se o cliente ainda não informou qual pacote escolheu. Pergunte qual pacote ele quer.
+- Se o estado disser Pix enviado=sim e o cliente não pedir explicitamente a chave de novo, nunca prometa que vai mandar, enviar ou reenviar a chave. A chave não deve ser disparada automaticamente em perguntas sobre prazo, valor, nome do favorecido ou simples confirmações.
 - O prazo de cada pacote está no catálogo. Ao perguntarem sobre prazo ou entrega, use o prazo cadastrado e diga que ele começa após a confirmação manual do pagamento.
 - Ao receber imagem que possa ser comprovante, avalie visualmente favorecido, chave, valor, data/hora e se parece realizado ou agendado. "Comprovante de agendamento", "Pix agendado", data futura ou pendente são sinais de agendamento. Mesmo se parecer realizado, diga apenas que recebeu e que haverá conferência manual; use nextStatus="comprovante_recebido" e handoffRequested=true.
 - Não exponha dados bancários e não trate aparência ou ID como confirmação definitiva.
@@ -227,11 +244,12 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   const userIntent = detectUserIntent(messageBody, Boolean(mediaData));
   const hadPixSent = activeLead.pixSent;
   const resendRequested = isPixResendRequest(messageBody);
+  const packageChangedAfterPix = Boolean(selectedPackage && hadPixSent && selectedPackage.id !== activeLead.selectedPackageId);
   if (selectedPackage) {
     memory.selectedPackageName = selectedPackage.name;
     memory.selectedPackageImages = selectedPackage.imageCount || 0;
     memory.selectedPackageValue = selectedPackage.price || 0;
-    if (!hadPixSent) nextStatus = 'aguardando_pix';
+    if (!hadPixSent || packageChangedAfterPix) nextStatus = 'aguardando_pix';
   }
   const hasSelectedPackage = Boolean(selectedPackage || activeLead.packageConfirmed);
   if (service === 'photos' && nextStatus === 'aguardando_pix' && !hasSelectedPackage) {
@@ -253,14 +271,16 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     memory.saleStatus = 'aguardando_pagamento';
   }
   if (hadPixSent && !resendRequested) {
-    reply = reply.replaceAll(pixKey, '').replace(/\s{2,}/g, ' ').trim() || 'A chave Pix já foi enviada acima. Se precisar que eu a reenvie, é só me pedir. 😊';
+    reply = reply.replaceAll(pixKey, '').replace(/\s{2,}/g, ' ').trim() || 'Perfeito. Fico à disposição se precisar de ajuda.';
   }
   const shouldSplitInitialPhotoReply = service === 'photos' && history.length <= 1 && !shouldSendPix;
   const outgoingMessages = shouldSendPix && hadPixSent && resendRequested
     ? [pixKey]
+    : packageChangedAfterPix && selectedPackage
+    ? [packageUpdatedAfterPixMessage(selectedPackage)]
     : shouldSendPix
     ? [
-      'Que bom que você gostou! 😊 Vamos caprichar no seu ensaio. Logo abaixo vou te mandar a chave Pix para você copiar com facilidade. Depois do pagamento, envie o comprovante para conferência manual.',
+      selectedPackage ? packagePixConfirmationMessage(selectedPackage) : reply,
       pixKey,
       paymentRecipientDetails,
     ]
@@ -274,7 +294,7 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     const selectedPackageId = selectedPackage?.id || activeLead.selectedPackageId;
     const selectedQuantity = selectedPackage?.imageCount || activeLead.selectedQuantity;
     const selectedPrice = selectedPackage?.price || activeLead.selectedPrice;
-    const stage = cancelled ? 'closed' : proofReceived ? 'awaiting_manual_confirmation' : requiresHuman ? 'human_handoff' : shouldSendPix ? 'awaiting_payment' : selectedPackage ? 'package_selected' : nextStatus === 'oferta' ? 'awaiting_package_selection' : activeLead.conversationStage || 'qualifying';
+    const stage = cancelled ? 'closed' : proofReceived ? 'awaiting_manual_confirmation' : requiresHuman ? 'human_handoff' : shouldSendPix || packageChangedAfterPix ? 'awaiting_payment' : selectedPackage ? 'package_selected' : nextStatus === 'oferta' ? 'awaiting_package_selection' : activeLead.conversationStage || 'qualifying';
     await tx.insert(messages).values(outgoingMessages.map((content) => ({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant' as const, content })));
     await tx.update(leads).set({ status: proofReceived ? 'comprovante_recebido' : nextStatus, temperature, persistentMemory: JSON.stringify(memory), aiEnabled: requiresHuman || cancelled ? false : activeLead.aiEnabled, handoffAt: requiresHuman ? new Date() : activeLead.handoffAt, estimatedValue: selectedPrice || activeLead.estimatedValue, conversationStage: stage, selectedPackageId, selectedQuantity, selectedPrice, packageConfirmed: selectedPackage ? true : activeLead.packageConfirmed, paymentMethod: shouldSendPix ? 'pix' : activeLead.paymentMethod, paymentStatus: proofReceived ? 'pending_review' : shouldSendPix ? 'pending' : activeLead.paymentStatus, pixSent: shouldSendPix ? true : activeLead.pixSent, pixSentAt: shouldSendPix && !hadPixSent ? new Date() : activeLead.pixSentAt, pixSendCount: shouldSendPix ? (activeLead.pixSendCount || 0) + 1 : activeLead.pixSendCount, paymentProofReceived: proofReceived || activeLead.paymentProofReceived, awaitingManualPaymentReview: proofReceived || activeLead.awaitingManualPaymentReview, lastUserIntent: userIntent, lastAiAction: shouldSendPix ? (hadPixSent ? 'resend_pix' : 'send_pix') : proofReceived ? 'request_manual_payment_review' : parsed.handoffRequested ? 'human_handoff' : 'reply', humanHandoff: requiresHuman || activeLead.humanHandoff, updatedAt: new Date() }).where(and(eq(leads.id, activeLead.id), eq(leads.userId, userId)));
     await tx.insert(activities).values({ id: randomUUID(), userId, leadId: activeLead.id, type: 'whatsapp_message', content: `Cliente: ${messageBody || '[Imagem]'}\nIA: ${outgoingMessages.join('\n')}`, metadata: JSON.stringify({ stageBefore: activeLead.conversationStage, stageAfter: stage, userIntent, action: shouldSendPix ? (hadPixSent ? 'resend_pix' : 'send_pix') : 'reply', selectedPackage: selectedPackageId, paymentStatus: proofReceived ? 'pending_review' : shouldSendPix ? 'pending' : activeLead.paymentStatus, service }) });

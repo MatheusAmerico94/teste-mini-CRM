@@ -4,7 +4,7 @@ import { AUTOMATION_BLOCKED_STATUSES, isLeadStatus, LEAD_STATUSES } from '../lib
 import { decryptSecret, encryptSecret, maskSecret } from '../lib/security/crypto';
 import { agentSchema, packageSchema } from '../lib/validation';
 import { isSpecialistService, normalizeServiceKey } from '../lib/services/routing';
-import { selectedPackageFromMessage, type PackageSummary } from '../lib/services/chat';
+import { isPixResendRequest, selectedPackageFromMessage, type PackageSummary } from '../lib/services/chat';
 
 test('pipeline contém as etapas comerciais na ordem esperada', () => {
   assert.deepEqual(LEAD_STATUSES.map(({ id }) => id), [
@@ -50,4 +50,14 @@ test('Pix só é liberado após escolha explícita de pacote', () => {
   assert.equal(selectedPackageFromMessage('Vou querer o pacote de 10 fotos', packages)?.name, '10 fotos');
   assert.equal(selectedPackageFromMessage('Sim', packages, 'Quer seguir com o pacote de 10 fotos por R$29,90?')?.name, '10 fotos');
   assert.equal(selectedPackageFromMessage('Sim', packages, 'Você prefere um estilo elegante?'), undefined);
+});
+
+test('pedido explícito de reenvio de Pix é reconhecido em variações naturais', () => {
+  for (const message of [
+    'Manda novamente pfv', 'manda de novo', 'me manda de novo',
+    'qual era a chave?', 'perdi a chave', 'não consigo copiar',
+    'manda só ela', 'reenvia pra mim', 'me passa o pix de novo',
+  ]) assert.equal(isPixResendRequest(message), true, message);
+  assert.equal(isPixResendRequest('Quanto tempo demora?'), false);
+  assert.equal(isPixResendRequest('Ok'), false);
 });
