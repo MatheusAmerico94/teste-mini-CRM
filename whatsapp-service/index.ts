@@ -21,7 +21,14 @@ import { decryptSecret, encryptSecret } from '../lib/security/crypto';
 
 const port = Number(process.env.PORT || 3001);
 const serviceToken = process.env.WHATSAPP_SERVICE_TOKEN;
-let sessionRoot = path.resolve(process.env.WHATSAPP_SESSION_DIR || './whatsapp-session');
+const configuredSessionDir = process.env.WHATSAPP_SESSION_DIR?.trim();
+// O plano gratuito da Render não permite discos persistentes em /var/data.
+// A sessão também é criptografada no banco, então /tmp é suficiente: após um
+// reinício o serviço restaura as credenciais antes de abrir o WhatsApp.
+const sessionDirectory = configuredSessionDir?.startsWith('/var/data')
+  ? '/tmp/whatsapp-session'
+  : configuredSessionDir || './whatsapp-session';
+let sessionRoot = path.resolve(sessionDirectory);
 const connectionString = process.env.DATABASE_URL;
 if (!serviceToken) throw new Error('WHATSAPP_SERVICE_TOKEN não configurado');
 if (!connectionString) throw new Error('DATABASE_URL não configurada');
@@ -31,6 +38,10 @@ const db = drizzle(queryClient, { schema });
 const logger = pino({ level: process.env.LOG_LEVEL || 'warn' });
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+
+if (configuredSessionDir?.startsWith('/var/data')) {
+  logger.warn('WHATSAPP_SESSION_DIR=/var/data não é suportado no plano gratuito; usando /tmp/whatsapp-session.');
+}
 
 let sock: any = null;
 let ownerUserId: string | null = null;
