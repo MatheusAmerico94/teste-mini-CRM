@@ -25,6 +25,9 @@ export function removeRepeatedInitialGreeting(reply: string, greeting = greeting
     .replace(new RegExp(`^\\s*${escapedGreeting}(?:[!,.\\s]+(?:tudo bem\\??)?)?\\s*`, 'i'), '')
     .trim();
 }
+export function isConversationGreeting(value: string) {
+  return /^(oi|ola|bom dia|boa tarde|boa noite)\b/i.test(normalizeText(value.trim()));
+}
 function findApiKey(list: Array<typeof agents.$inferSelect>) { return list.map((agent) => decryptSecret(agent.apiKey)).find(Boolean) || process.env.OPENAI_API_KEY; }
 
 function normalizeText(value: string) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
@@ -119,7 +122,7 @@ function routerReply(body: string, memory: Record<string, unknown>, suggestedRep
   };
 }
 
-function photosPrompt(agent: typeof agents.$inferSelect, lead: typeof leads.$inferSelect, settings: typeof businessSettings.$inferSelect | undefined, catalog: unknown, portfolio: unknown, isFirstReply: boolean) {
+function photosPrompt(agent: typeof agents.$inferSelect, lead: typeof leads.$inferSelect, settings: typeof businessSettings.$inferSelect | undefined, catalog: unknown, portfolio: unknown, isFirstSpecialistReply: boolean, conversationAlreadyGreeted: boolean) {
   return `Você é ${agent.name}, atendente comercial de ensaios fotográficos com IA no WhatsApp. As regras abaixo têm prioridade sobre a personalidade.
 Personalidade: ${agent.personality}
 Data e hora atuais em Brasília: ${nowInBrazil()}. Etapa: ${lead.conversationStage || lead.status || 'atendimento'}. Estado controlado pelo CRM: pacote=${lead.selectedPackageId || 'nenhum'}, quantidade=${lead.selectedQuantity || 'nenhuma'}, valor=${lead.selectedPrice || 'nenhum'}, Pix enviado=${lead.pixSent ? 'sim' : 'não'}, pagamento=${lead.paymentStatus}, humano=${lead.humanHandoff ? 'sim' : 'não'}. Memória: ${JSON.stringify(safeMemory(lead.persistentMemory))}.
@@ -128,7 +131,7 @@ Regras comerciais: ${settings?.salesInstructions || 'Seja breve, educado e condu
 Pix manual: chave=${settings?.pixKey || 'não configurada'}, favorecido=${settings?.pixRecipient || 'não configurado'}, banco=${settings?.pixInstitution || 'não configurado'}.
 
 Regras obrigatórias:
-- ${isFirstReply ? `Este é o primeiro atendimento. O CRM enviará antes da sua resposta a primeira mensagem curta "${greetingInBrazil()}! Tudo bem?". Sua reply será enviada como uma segunda mensagem separada: continue de modo acolhedor, diga que pode explicar como funciona o ensaio com IA e apresente o próximo passo de forma curta. Não repita a saudação e não despeje preços antes de entender a ocasião.` : 'A conversa já está em andamento; não repita a saudação inicial.'}
+- ${isFirstSpecialistReply && !conversationAlreadyGreeted ? `Nenhum agente cumprimentou o cliente ainda. O CRM enviará antes da sua resposta a primeira mensagem curta "${greetingInBrazil()}! Tudo bem?". Sua reply será enviada como uma segunda mensagem separada: continue de modo acolhedor, diga que pode explicar como funciona o ensaio com IA e apresente o próximo passo de forma curta. Não repita a saudação e não despeje preços antes de entender a ocasião.` : conversationAlreadyGreeted ? 'O cliente já foi cumprimentado por outro agente nesta conversa. Não faça qualquer nova saudação; continue diretamente do assunto atual.' : 'A conversa já está em andamento; não repita a saudação inicial.'}
 - Para data, dia ou hora, use exclusivamente a data atual acima. Não invente dados externos.
 - Nunca invente preço, pacote, desconto, prazo, URL, promoção, urgência, prova social ou dado Pix. Use somente os pacotes cadastrados.
 - Entenda a ocasião e faça no máximo uma pergunta por resposta. Podemos criar qualquer tema ou cenário com IA; não negue um tema só por não estar no portfólio.
@@ -222,7 +225,8 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
       const currentMemory = safeMemory(activeLead.persistentMemory);
       const guided = routerReply(messageBody, currentMemory, routed.reply || 'Olá! Como posso te ajudar hoje?');
       const reply = guided.reply;
-      await db.transaction(async (tx) => { await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply }); await tx.update(leads).set({ persistentMemory: JSON.stringify({ ...currentMemory, ...(routed.memoryUpdate || {}), routerStep: guided.routerStep }), updatedAt: new Date() }).where(eq(leads.id, activeLead.id)); });
+      const conversationAlreadyGreeted = Boolean(currentMemory.conversationAlreadyGreeted) || isConversationGreeting(reply);
+      await db.transaction(async (tx) => { await tx.insert(messages).values({ id: randomUUID(), userId, leadId: activeLead.id, role: 'assistant', content: reply }); await tx.update(leads).set({ persistentMemory: JSON.stringify({ ...currentMemory, ...(routed.memoryUpdate || {}), routerStep: guided.routerStep, conversationAlreadyGreeted }), updatedAt: new Date() }).where(eq(leads.id, activeLead.id)); });
       return [reply];
     }
     service = routed.intent;
@@ -237,7 +241,8 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
     activeLead = { ...activeLead, serviceKey: service, assignedAgentId: agent.id };
   }
   const catalog: PackageSummary[] = packages.map((item) => ({ id: item.id, name: item.name, description: item.description, price: item.price, imageCount: item.imageCount, deliveryHours: item.deliveryHours, deliveryDays: item.deliveryDays }));
-  const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), isFirstSpecialistReply) : sitesPrompt(agent, activeLead);
+  const conversationAlreadyGreeted = Boolean(safeMemory(activeLead.persistentMemory).conversationAlreadyGreeted);
+  const prompt = service === 'photos' ? photosPrompt(agent, activeLead, settings, catalog, portfolio.map((item) => ({ title: item.title, category: item.category, url: item.mediaUrl })), isFirstSpecialistReply, conversationAlreadyGreeted) : sitesPrompt(agent, activeLead);
   const content: any = mediaData?.type === 'image' ? [{ type: 'text', text: messageBody || 'O cliente enviou esta imagem.' }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${mediaData.base64}` } }] : messageBody;
   const ordered = history.reverse().slice(0, -1).map((item) => ({ role: item.role === 'user' ? 'user' as const : 'assistant' as const, content: item.content }));
   const completion = await client.chat.completions.create({ model: agent.model || 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: agent.responseTemperature ?? 0.7, messages: [{ role: 'system', content: prompt }, ...ordered, { role: 'user', content }] });
@@ -282,11 +287,12 @@ export async function processIncomingMessage(userId: string, contactNumber: stri
   if (hadPixSent && !resendRequested) {
     reply = reply.replaceAll(pixKey, '').replace(/\s{2,}/g, ' ').trim() || 'Perfeito. Fico à disposição se precisar de ajuda.';
   }
-  const shouldSplitInitialPhotoReply = service === 'photos' && isFirstSpecialistReply && !shouldSendPix;
+  const shouldSplitInitialPhotoReply = service === 'photos' && isFirstSpecialistReply && !conversationAlreadyGreeted && !shouldSendPix;
   const firstReplyGreeting = greetingInBrazil();
   const initialFollowUpReply = shouldSplitInitialPhotoReply
     ? removeRepeatedInitialGreeting(reply, firstReplyGreeting) || 'Claro. Posso te explicar como funciona o ensaio com IA. Você já tem alguma ideia do tipo de foto que gostaria?'
     : reply;
+  if (shouldSplitInitialPhotoReply || isConversationGreeting(initialFollowUpReply)) memory.conversationAlreadyGreeted = true;
   const outgoingMessages = shouldSendPix && hadPixSent && resendRequested
     ? [pixKey]
     : packageChangedAfterPix && selectedPackage

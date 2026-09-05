@@ -4,7 +4,7 @@ import { AUTOMATION_BLOCKED_STATUSES, isLeadStatus, LEAD_STATUSES } from '../lib
 import { decryptSecret, encryptSecret, maskSecret } from '../lib/security/crypto';
 import { agentSchema, packageSchema } from '../lib/validation';
 import { isSpecialistService, normalizeServiceKey } from '../lib/services/routing';
-import { isPixResendRequest, removeRepeatedInitialGreeting, selectedPackageFromMessage, type PackageSummary } from '../lib/services/chat';
+import { isConversationGreeting, isPixResendRequest, removeRepeatedInitialGreeting, selectedPackageFromMessage, type PackageSummary } from '../lib/services/chat';
 
 test('pipeline contém as etapas comerciais na ordem esperada', () => {
   assert.deepEqual(LEAD_STATUSES.map(({ id }) => id), [
@@ -65,4 +65,10 @@ test('pedido explícito de reenvio de Pix é reconhecido em variações naturais
 test('segunda mensagem inicial não repete a saudação enviada pelo CRM', () => {
   assert.equal(removeRepeatedInitialGreeting('Bom dia! Tudo bem? Claro, posso explicar como funciona.', 'Bom dia'), 'Claro, posso explicar como funciona.');
   assert.equal(removeRepeatedInitialGreeting('Claro, posso explicar como funciona.', 'Bom dia'), 'Claro, posso explicar como funciona.');
+});
+
+test('saudação é reconhecida como estado global da conversa', () => {
+  assert.equal(isConversationGreeting('Oi, tudo bem?'), true);
+  assert.equal(isConversationGreeting('Bom dia! Como posso te ajudar?'), true);
+  assert.equal(isConversationGreeting('Claro, me conta o que você imaginou.'), false);
 });
